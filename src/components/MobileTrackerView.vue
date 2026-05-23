@@ -65,13 +65,11 @@ defineProps<{
     </section>
 
     <section v-else-if="app.editingLogId" class="-mx-3 -my-4 flex h-[100dvh] flex-col overflow-hidden bg-paper px-4 py-5">
-      <div class="mb-4 flex items-center justify-between gap-3">
-        <button class="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-transparent px-3 font-bold text-ink" type="button" @click="app.goBackFromEditor">
-          <ArrowLeft :size="18" /> Back
+      <div class="relative mb-6 flex min-h-10 items-center justify-center">
+        <button class="absolute left-0 inline-flex min-h-10 w-12 items-center justify-center rounded-lg border border-line bg-transparent font-bold text-ink" type="button" aria-label="Back" @click="app.goBackFromEditor">
+          <ArrowLeft :size="18" />
         </button>
-      </div>
-      <div class="mb-6 text-center">
-        <p class="text-5xl font-black leading-none">
+        <p class="mx-14 truncate text-center text-2xl font-black leading-none">
           {{ app.logs.find((log) => log.id === app.editingLogId) ? app.formatDuration(app.logs.find((log) => log.id === app.editingLogId)!.start_time, app.logs.find((log) => log.id === app.editingLogId)!.end_time) : '00:00:00' }}
         </p>
       </div>
@@ -132,17 +130,15 @@ defineProps<{
     </section>
 
     <section v-else-if="app.detailGroup" class="-mx-3 -my-4 min-h-screen bg-paper px-4 py-5">
-      <div class="mb-4 flex items-center justify-between gap-3">
-        <button class="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-transparent px-3 font-bold text-ink" type="button" @click="app.closeLogDetail">
-          <ArrowLeft :size="18" /> Back
+      <div class="relative mb-4 grid min-h-10 justify-items-center gap-1">
+        <button class="absolute left-0 inline-flex min-h-10 w-12 items-center justify-center rounded-lg border border-line bg-transparent font-bold text-ink" type="button" aria-label="Back" @click="app.closeLogDetail">
+          <ArrowLeft :size="18" />
         </button>
-      </div>
-      <div class="mb-5 grid gap-1">
-        <div class="flex items-center gap-3">
+        <div class="mx-14 flex min-w-0 items-center justify-center gap-2">
           <span class="h-3 w-3 flex-none rounded-full border border-black/10" :style="{ backgroundColor: app.projectById(app.detailGroup.projectId)?.color ?? '#777' }"></span>
-          <h2 class="truncate text-3xl font-black leading-tight">{{ app.projectById(app.detailGroup.projectId)?.name ?? 'Unknown project' }}</h2>
+          <h2 class="truncate text-center text-xl font-black">{{ app.projectById(app.detailGroup.projectId)?.name ?? 'Unknown project' }}</h2>
         </div>
-        <p v-if="app.taskById(app.detailGroup.taskId)" class="truncate text-base font-bold text-stone-300">{{ app.taskById(app.detailGroup.taskId)?.name }}</p>
+        <p v-if="app.taskById(app.detailGroup.taskId)" class="mx-14 truncate text-center text-sm font-bold text-stone-300">{{ app.taskById(app.detailGroup.taskId)?.name }}</p>
       </div>
       <div class="grid gap-2">
         <article v-for="log in app.detailLogs" :key="log.id" class="grid cursor-pointer grid-cols-1 border-b border-line px-1 py-2" @click="app.openLogEditor(log)">
@@ -219,15 +215,13 @@ defineProps<{
         <div class="absolute inset-x-0 bottom-0 min-h-[62vh] rounded-t-3xl border border-line bg-panel p-4 shadow-soft" @click.stop>
           <div class="mx-auto mb-4 h-1 w-12 rounded-full bg-line"></div>
           <div v-if="app.taskSheetProjectId" class="grid gap-3">
-            <div class="flex items-center justify-between">
-              <button class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line bg-transparent px-3 font-bold text-ink" type="button" @click="app.taskSheetProjectId = null; app.taskCreateOpen = false">
-                <ArrowLeft :size="18" /> Projects
+            <div class="relative flex min-h-10 items-center justify-center">
+              <button class="absolute left-0 inline-flex min-h-10 w-12 items-center justify-center rounded-lg border border-line bg-transparent font-bold text-ink" type="button" aria-label="Back to projects" @click="app.taskSheetProjectId = null; app.taskCreateOpen = false">
+                <ArrowLeft :size="18" />
               </button>
-            </div>
-            <div class="grid gap-1">
-              <div class="flex items-center gap-2">
+              <div class="mx-14 flex min-w-0 items-center justify-center gap-2">
                 <span class="h-3 w-3 flex-none rounded-full border border-black/10" :style="{ backgroundColor: app.taskSheetProject?.color ?? '#777' }"></span>
-                <h2 class="truncate text-2xl font-black">{{ app.taskSheetProject?.name ?? 'Tasks' }}</h2>
+                <h2 class="truncate text-center text-xl font-black">{{ app.taskSheetProject?.name ?? 'Tasks' }}</h2>
               </div>
             </div>
             <div v-if="app.taskCreateOpen" class="grid gap-2">
@@ -245,10 +239,19 @@ defineProps<{
               <Plus :size="18" /> Add a new task
             </button>
             <div class="grid max-h-[40vh] gap-1.5 overflow-auto pb-8">
-              <article v-for="task in app.taskSheetTasks" :key="task.id" class="grid grid-cols-[1fr_auto] items-center gap-2 rounded-lg bg-panel px-3 py-2" :class="{ 'opacity-55': task.archived }">
+              <article v-for="task in app.taskSheetTasks" :key="task.id" class="grid grid-cols-[2.5rem_1fr_auto] items-center gap-2 rounded-lg bg-panel px-3 py-2" :class="[task.archived ? 'opacity-55' : '', task.completed ? 'opacity-70' : '']">
+                <button
+                  class="relative inline-flex h-6 w-6 items-center justify-center rounded-full border-2 transition"
+                  :class="task.completed ? 'border-sage bg-sage text-ink' : 'border-stone-300 bg-transparent text-transparent'"
+                  type="button"
+                  :aria-label="task.completed ? 'Mark task incomplete' : 'Mark task complete'"
+                  @click="app.toggleTaskCompleted(task)"
+                >
+                  <span v-if="task.completed" class="h-2.5 w-2.5 rounded-full bg-ink"></span>
+                </button>
                 <span class="truncate font-black">{{ task.name }}</span>
-                <button class="glass-start inline-flex min-h-9 items-center justify-center gap-1 rounded-lg px-3 text-sm font-black" type="button" @click="app.switchTimer(task.project_id, task.id)">
-                  <Play :size="14" fill="currentColor" /> Start
+                <button class="glass-start inline-flex h-8 w-28 shrink-0 items-center justify-center gap-1 rounded-full px-2.5 text-xs font-black tabular-nums" type="button" @click="app.switchTimer(task.project_id, task.id)">
+                  <Play :size="14" fill="currentColor" /> {{ app.formatDurationMs(app.taskTotalDurationMs(task.id)) }}
                 </button>
               </article>
               <p v-if="!app.taskSheetTasks.length" class="py-8 text-center text-sm font-bold text-stone-300">No tasks yet.</p>
@@ -291,8 +294,8 @@ defineProps<{
                 <div class="relative grid touch-pan-y grid-cols-[auto_1fr_auto] items-center gap-2 rounded-lg bg-panel px-3 py-2 transition-transform duration-150 ease-out" :class="{ 'duration-0': app.swipingProjectId === project.id }" :style="app.projectSwipeStyle(project.id)">
                   <span class="h-3 w-3 rounded-full border border-black/10" :style="{ backgroundColor: project.color }"></span>
                   <span class="truncate font-black">{{ project.name }}</span>
-                  <button class="glass-start inline-flex min-h-9 items-center justify-center gap-1 rounded-lg px-3 text-sm font-black" type="button" @click.stop="app.switchTimer(project.id)">
-                    <Play :size="14" fill="currentColor" /> Start
+                  <button class="glass-start inline-flex h-8 w-28 shrink-0 items-center justify-center gap-1 rounded-full px-2.5 text-xs font-black tabular-nums" type="button" @click.stop="app.switchTimer(project.id)">
+                    <Play :size="14" fill="currentColor" /> {{ app.formatDurationMs(app.projectTotalDurationMs(project.id)) }}
                   </button>
                 </div>
               </article>

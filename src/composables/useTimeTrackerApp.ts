@@ -1,9 +1,9 @@
 import { computed, onMounted, onUnmounted, proxyRefs, reactive, ref } from 'vue';
 import { supabase, getCurrentUserId, handleAuthRedirect } from '../services/supabase';
-import { bootstrapFromRemote, refreshFromRemote, startBackgroundSync, subscribeSyncState, type SyncState } from '../services/sync-queue';
+import { ensureBootstrapData, startBackgroundSync, subscribeSyncState, type SyncState } from '../services/sync-queue';
 import { createProject, listProjects, setProjectArchived, updateProject } from '../stores/projects';
-import { createTask, listTasks, listTasksForProject, setTaskArchived, updateTask } from '../stores/tasks';
-import { getRunningLog, listTimeLogs, softDeleteTimeLog, startTimer, stopTimer, updateTimeLog } from '../stores/time-logs';
+import { createTask, listTasks, listTasksForProject, setTaskArchived, setTaskCompleted, updateTask } from '../stores/tasks';
+import { getRunningLog, listTimeLogs, softDeleteTimeLog, startTimer, stopTimer, sumProjectTimeLogDurations, sumTaskTimeLogDurations, updateTimeLog } from '../stores/time-logs';
 import type { Project, Task, TimeLog } from '../types';
 
 export interface DetailGroup {
@@ -13,6 +13,9 @@ export interface DetailGroup {
 }
 
 export function useTimeTrackerApp() {
+  const sortTasks = (taskList: Task[]) =>
+    [...taskList].sort((a, b) => Number(Boolean(a.completed)) - Number(Boolean(b.completed)) || a.created_at.localeCompare(b.created_at));
+
   const userId = ref<string | null>(null);
   const email = ref('');
   const password = ref('');
@@ -21,6 +24,8 @@ export function useTimeTrackerApp() {
   const tasks = ref<Task[]>([]);
   const allTasks = ref<Task[]>([]);
   const logs = ref<TimeLog[]>([]);
+  const projectDurationTotals = ref<Record<string, number>>({});
+  const taskDurationTotals = ref<Record<string, number>>({});
   const selectedProjectId = ref('');
   const selectedTaskId = ref<string | null>(null);
   const includeArchived = ref(false);
@@ -65,14 +70,14 @@ export function useTimeTrackerApp() {
   let timerInterval: number | undefined;
   const handleOnlineRecovery = () => {
     if (!userId.value) return;
-    void recoverRemoteData(userId.value);
+    void syncBootstrapData(userId.value, false);
   };
 
   const selectedProject = computed(() => projects.value.find((project) => project.id === selectedProjectId.value));
   const taskSheetProject = computed(() => projects.value.find((project) => project.id === taskSheetProjectId.value));
-  const taskSheetTasks = computed(() => allTasks.value.filter((task) => task.project_id === taskSheetProjectId.value && (includeArchived.value || !task.archived)));
-  const activeTasks = computed(() => tasks.value.filter((task) => includeArchived.value || !task.archived));
-  const logFormTasks = computed(() => allTasks.value.filter((task) => task.project_id === logForm.project_id && (includeArchived.value || !task.archived)));
+  const taskSheetTasks = computed(() => sortTasks(allTasks.value.filter((task) => task.project_id === taskSheetProjectId.value && (includeArchived.value || !task.archived))));
+  const activeTasks = computed(() => sortTasks(tasks.value.filter((task) => includeArchived.value || !task.archived)));
+  const logFormTasks = computed(() => sortTasks(allTasks.value.filter((task) => task.project_id === logForm.project_id && (includeArchived.value || !task.archived))));
   const visibleLogs = computed(() => logs.value.filter((log) => includeArchived.value || !projectById(log.project_id)?.archived));
   const canStartTimer = computed(() => Boolean(userId.value && selectedProjectId.value && !runningLog.value));
   const groupedLogs = computed(() => {
@@ -163,19 +168,14 @@ export function useTimeTrackerApp() {
     authMessage.value = '';
     stopSync?.();
 
-    try {
-      await bootstrapFromRemote(nextUserId);
-    } catch (error) {
-      syncState.lastError = error instanceof Error ? error.message : String(error);
-    }
-
+    await syncBootstrapData(nextUserId, true);
     stopSync = startBackgroundSync(nextUserId);
     await refreshLocalData();
   }
 
-  async function recoverRemoteData(scopeUserId: string) {
+  async function syncBootstrapData(scopeUserId: string, requireOnline: boolean) {
     try {
-      await refreshFromRemote(scopeUserId);
+      await ensureBootstrapData(scopeUserId, requireOnline);
       syncState.lastError = null;
       await refreshLocalData();
     } catch (error) {
@@ -191,6 +191,8 @@ export function useTimeTrackerApp() {
     tasks.value = [];
     allTasks.value = [];
     logs.value = [];
+    projectDurationTotals.value = {};
+    taskDurationTotals.value = {};
     runningLog.value = undefined;
     selectedProjectId.value = '';
     selectedTaskId.value = null;
@@ -241,13 +243,15 @@ export function useTimeTrackerApp() {
       selectedProjectId.value = projects.value[0]?.id ?? '';
     }
 
-    tasks.value = selectedProjectId.value ? await listTasksForProject(userId.value, selectedProjectId.value, includeArchived.value) : [];
-    allTasks.value = await listTasks(userId.value);
+    tasks.value = selectedProjectId.value ? sortTasks(await listTasksForProject(userId.value, selectedProjectId.value, includeArchived.value)) : [];
+    allTasks.value = sortTasks(await listTasks(userId.value));
     if (selectedTaskId.value && !tasks.value.some((task) => task.id === selectedTaskId.value)) {
       selectedTaskId.value = null;
     }
 
     logs.value = await listTimeLogs(userId.value);
+    projectDurationTotals.value = await sumProjectTimeLogDurations(userId.value);
+    taskDurationTotals.value = await sumTaskTimeLogDurations(userId.value);
     runningLog.value = await getRunningLog(userId.value);
   }
 
@@ -304,6 +308,12 @@ export function useTimeTrackerApp() {
   async function toggleTaskArchive(task: Task) {
     if (!userId.value) return;
     await setTaskArchived(userId.value, task, !task.archived);
+    await refreshLocalData();
+  }
+
+  async function toggleTaskCompleted(task: Task) {
+    if (!userId.value) return;
+    await setTaskCompleted(userId.value, task, !task.completed);
     await refreshLocalData();
   }
 
@@ -438,15 +448,21 @@ export function useTimeTrackerApp() {
 
   function openMenuSheet() {
     closeLogEditor();
-    settingsOpen.value = false;
     projectsSheetOpen.value = false;
     projectCreateOpen.value = false;
     menuSheetOpen.value = true;
   }
 
+  function openTimeline() {
+    closeLogEditor();
+    closeLogDetail();
+    closeSheets();
+    settingsOpen.value = false;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   function openProjectsSheet() {
     closeLogEditor();
-    settingsOpen.value = false;
     menuSheetOpen.value = false;
     projectCreateOpen.value = false;
     taskSheetProjectId.value = null;
@@ -544,6 +560,16 @@ export function useTimeTrackerApp() {
     return Math.max(0, endMs - new Date(log.start_time).getTime());
   }
 
+  function taskTotalDurationMs(taskId: string) {
+    const runningMs = runningLog.value?.task_id === taskId ? logDurationMs(runningLog.value) : 0;
+    return (taskDurationTotals.value[taskId] ?? 0) + runningMs;
+  }
+
+  function projectTotalDurationMs(projectId: string) {
+    const runningMs = runningLog.value?.project_id === projectId ? logDurationMs(runningLog.value) : 0;
+    return (projectDurationTotals.value[projectId] ?? 0) + runningMs;
+  }
+
   function formatDateTime(value: string) {
     return new Intl.DateTimeFormat(undefined, {
       month: 'short',
@@ -608,6 +634,8 @@ export function useTimeTrackerApp() {
     tasks,
     allTasks,
     logs,
+    projectDurationTotals,
+    taskDurationTotals,
     selectedProjectId,
     selectedTaskId,
     includeArchived,
@@ -647,6 +675,7 @@ export function useTimeTrackerApp() {
     addMobileTask,
     saveTask,
     toggleTaskArchive,
+    toggleTaskCompleted,
     beginTimer,
     switchTimer,
     endTimer,
@@ -664,6 +693,7 @@ export function useTimeTrackerApp() {
     selectEditProject,
     selectEditTask,
     openMenuSheet,
+    openTimeline,
     openProjectsSheet,
     openProjectCreate,
     closeSheets,
@@ -676,6 +706,8 @@ export function useTimeTrackerApp() {
     taskById,
     formatDuration,
     formatDurationMs,
+    projectTotalDurationMs,
+    taskTotalDurationMs,
     formatDateTime,
     dayKey,
     formatTime

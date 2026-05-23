@@ -7,6 +7,39 @@ export async function listTimeLogs(userId: string): Promise<TimeLog[]> {
   return logs.filter((log) => !log.deleted_at).reverse();
 }
 
+export async function sumTaskTimeLogDurations(userId: string): Promise<Record<string, number>> {
+  const totals: Record<string, number> = {};
+
+  await db.time_logs
+    .where('user_id')
+    .equals(userId)
+    .filter((log) => Boolean(log.task_id) && !log.deleted_at && Boolean(log.end_time))
+    .each((log) => {
+      const taskId = log.task_id;
+      if (!taskId || !log.end_time) return;
+
+      totals[taskId] = (totals[taskId] ?? 0) + Math.max(0, new Date(log.end_time).getTime() - new Date(log.start_time).getTime());
+    });
+
+  return totals;
+}
+
+export async function sumProjectTimeLogDurations(userId: string): Promise<Record<string, number>> {
+  const totals: Record<string, number> = {};
+
+  await db.time_logs
+    .where('user_id')
+    .equals(userId)
+    .filter((log) => !log.deleted_at && Boolean(log.end_time))
+    .each((log) => {
+      if (!log.end_time) return;
+
+      totals[log.project_id] = (totals[log.project_id] ?? 0) + Math.max(0, new Date(log.end_time).getTime() - new Date(log.start_time).getTime());
+    });
+
+  return totals;
+}
+
 export async function getRunningLog(userId: string): Promise<TimeLog | undefined> {
   const logs = await db.time_logs.where('user_id').equals(userId).toArray();
   return logs.find((log) => !log.end_time && !log.deleted_at);

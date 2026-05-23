@@ -15,7 +15,7 @@ export interface SyncState {
 const listeners = new Set<SyncListener>();
 let syncing = false;
 let intervalId: number | undefined;
-const refreshingUsers = new Set<string>();
+const bootstrappingUsers = new Set<string>();
 
 export function subscribeSyncState(listener: SyncListener): () => void {
   listeners.add(listener);
@@ -89,34 +89,35 @@ export function startBackgroundSync(userId: string): () => void {
   };
 }
 
-export async function refreshFromRemote(userId: string): Promise<void> {
-  if (!navigator.onLine || refreshingUsers.has(userId)) {
-    await emit(userId);
-    return;
-  }
-
-  refreshingUsers.add(userId);
-
-  try {
-    await bootstrapFromRemote(userId);
-  } finally {
-    refreshingUsers.delete(userId);
-    await emit(userId);
-  }
-}
-
-export async function bootstrapFromRemote(userId: string): Promise<boolean> {
+export async function ensureBootstrapData(userId: string, requireOnline = true): Promise<boolean> {
   if (await hasCompletedBootstrap(userId)) {
     return false;
   }
 
   if (!navigator.onLine) {
-    throw new Error('Initial download requires an internet connection.');
+    if (requireOnline) {
+      throw new Error('Initial download requires an internet connection.');
+    }
+
+    await emit(userId);
+    return false;
   }
 
-  await hydrateFromRemote(userId);
-  await markBootstrapComplete(userId);
-  return true;
+  if (bootstrappingUsers.has(userId)) {
+    await emit(userId);
+    return false;
+  }
+
+  bootstrappingUsers.add(userId);
+
+  try {
+    await hydrateFromRemote(userId);
+    await markBootstrapComplete(userId);
+    return true;
+  } finally {
+    bootstrappingUsers.delete(userId);
+    await emit(userId);
+  }
 }
 
 export async function syncQueue(userId: string): Promise<void> {

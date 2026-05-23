@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Archive, ArchiveRestore, ArrowLeft, Check, Circle, Clock, LogOut, Pencil, Play, Plus, Settings, Square, Trash2, Wifi, WifiOff } from 'lucide-vue-next';
+import { Archive, ArchiveRestore, ArrowLeft, Check, Circle, CircleDot, Clock, LogOut, Pencil, Play, Plus, Settings, Square, Trash2, Wifi, WifiOff } from 'lucide-vue-next';
 import type { TimeTrackerAppContext } from '../composables/useTimeTrackerApp';
 
 defineProps<{
@@ -174,8 +174,27 @@ defineProps<{
           </button>
         </form>
         <div class="mt-4 grid gap-2">
-          <div v-for="task in app.tasks" :key="task.id" class="grid grid-cols-[1fr_2.75rem] items-center gap-2 rounded-lg border border-line bg-panel p-2" :class="{ 'opacity-55': task.archived }">
-            <input v-model="task.name" class="min-h-10 rounded-md border border-transparent bg-panel px-2 text-ink" @blur="app.saveTask(task)" />
+          <div
+            v-for="task in app.tasks"
+            :key="task.id"
+            class="grid grid-cols-[2.5rem_1fr_2.75rem] items-center gap-2 rounded-lg border border-line bg-panel p-2"
+            :class="[task.archived ? 'opacity-55' : '', task.completed ? 'opacity-70' : '']"
+          >
+            <button
+              class="inline-flex min-h-10 items-center justify-center rounded-lg border border-line bg-panel text-ink"
+              type="button"
+              :title="task.completed ? 'Mark incomplete' : 'Mark complete'"
+              @click="app.toggleTaskCompleted(task)"
+            >
+              <CircleDot v-if="task.completed" :size="18" />
+              <Circle v-else :size="18" />
+            </button>
+            <input
+              v-model="task.name"
+              class="min-h-10 rounded-md border border-transparent bg-panel px-2 text-ink"
+              :class="task.completed ? 'line-through' : ''"
+              @blur="app.saveTask(task)"
+            />
             <button class="btn-primary inline-flex min-h-10 items-center justify-center rounded-lg" type="button" :title="task.archived ? 'Unarchive task' : 'Archive task'" @click="app.toggleTaskArchive(task)">
               <ArchiveRestore v-if="task.archived" :size="18" />
               <Archive v-else :size="18" />

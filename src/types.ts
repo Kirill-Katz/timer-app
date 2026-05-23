@@ -19,6 +19,7 @@ export interface Task extends BaseRow {
   project_id: string;
   name: string;
   archived: boolean;
+  completed: boolean;
 }
 
 export interface TimeLog extends BaseRow {
