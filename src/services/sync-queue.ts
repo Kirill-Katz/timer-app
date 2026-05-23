@@ -15,6 +15,7 @@ export interface SyncState {
 const listeners = new Set<SyncListener>();
 let syncing = false;
 let intervalId: number | undefined;
+const refreshingUsers = new Set<string>();
 
 export function subscribeSyncState(listener: SyncListener): () => void {
   listeners.add(listener);
@@ -86,6 +87,22 @@ export function startBackgroundSync(userId: string): () => void {
       intervalId = undefined;
     }
   };
+}
+
+export async function refreshFromRemote(userId: string): Promise<void> {
+  if (!navigator.onLine || refreshingUsers.has(userId)) {
+    await emit(userId);
+    return;
+  }
+
+  refreshingUsers.add(userId);
+
+  try {
+    await hydrateFromRemote(userId);
+  } finally {
+    refreshingUsers.delete(userId);
+    await emit(userId);
+  }
 }
 
 export async function syncQueue(userId: string): Promise<void> {

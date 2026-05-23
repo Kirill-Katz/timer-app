@@ -7,7 +7,26 @@ if (!supabaseUrl || !supabasePublishableKey) {
   throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY.');
 }
 
-export const supabase = createClient(supabaseUrl, supabasePublishableKey);
+const localStorageAdapter = {
+  getItem(key: string) {
+    return window.localStorage.getItem(key);
+  },
+  setItem(key: string, value: string) {
+    window.localStorage.setItem(key, value);
+  },
+  removeItem(key: string) {
+    window.localStorage.removeItem(key);
+  }
+};
+
+export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storage: localStorageAdapter
+  }
+});
 
 export async function handleAuthRedirect(): Promise<void> {
   const url = new URL(window.location.href);

@@ -1,6 +1,6 @@
 import { computed, onMounted, onUnmounted, proxyRefs, reactive, ref } from 'vue';
 import { supabase, getCurrentUserId, handleAuthRedirect } from '../services/supabase';
-import { hydrateFromRemote, startBackgroundSync, subscribeSyncState, type SyncState } from '../services/sync-queue';
+import { hydrateFromRemote, refreshFromRemote, startBackgroundSync, subscribeSyncState, type SyncState } from '../services/sync-queue';
 import { createProject, listProjects, setProjectArchived, updateProject } from '../stores/projects';
 import { createTask, listTasks, listTasksForProject, setTaskArchived, updateTask } from '../stores/tasks';
 import { getRunningLog, listTimeLogs, softDeleteTimeLog, startTimer, stopTimer, updateTimeLog } from '../stores/time-logs';
@@ -63,6 +63,10 @@ export function useTimeTrackerApp() {
   let unsubscribeSync: (() => void) | undefined;
   let unsubscribeAuth: (() => void) | undefined;
   let timerInterval: number | undefined;
+  const handleOnlineRecovery = () => {
+    if (!userId.value) return;
+    void recoverRemoteData(userId.value);
+  };
 
   const selectedProject = computed(() => projects.value.find((project) => project.id === selectedProjectId.value));
   const taskSheetProject = computed(() => projects.value.find((project) => project.id === taskSheetProjectId.value));
@@ -113,9 +117,21 @@ export function useTimeTrackerApp() {
       void refreshLocalData();
     });
 
+    window.addEventListener('online', handleOnlineRecovery);
+
     timerInterval = window.setInterval(() => {
       ticker.value = Date.now();
     }, 1_000);
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const nextUserId = session?.user.id ?? null;
+      if (nextUserId) {
+        void enterUserScope(nextUserId);
+      } else {
+        leaveUserScope();
+      }
+    });
+    unsubscribeAuth = () => authListener.subscription.unsubscribe();
 
     try {
       await handleAuthRedirect();
@@ -127,26 +143,22 @@ export function useTimeTrackerApp() {
     if (currentUserId) {
       await enterUserScope(currentUserId);
     }
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      const nextUserId = session?.user.id ?? null;
-      if (nextUserId) {
-        void enterUserScope(nextUserId);
-      } else {
-        leaveUserScope();
-      }
-    });
-    unsubscribeAuth = () => authListener.subscription.unsubscribe();
   });
 
   onUnmounted(() => {
     stopSync?.();
     unsubscribeSync?.();
     unsubscribeAuth?.();
+    window.removeEventListener('online', handleOnlineRecovery);
     if (timerInterval) window.clearInterval(timerInterval);
   });
 
   async function enterUserScope(nextUserId: string) {
+    if (userId.value === nextUserId && stopSync) {
+      await refreshLocalData();
+      return;
+    }
+
     userId.value = nextUserId;
     authMessage.value = '';
     stopSync?.();
@@ -159,6 +171,16 @@ export function useTimeTrackerApp() {
 
     stopSync = startBackgroundSync(nextUserId);
     await refreshLocalData();
+  }
+
+  async function recoverRemoteData(scopeUserId: string) {
+    try {
+      await refreshFromRemote(scopeUserId);
+      syncState.lastError = null;
+      await refreshLocalData();
+    } catch (error) {
+      syncState.lastError = error instanceof Error ? error.message : String(error);
+    }
   }
 
   function leaveUserScope() {
