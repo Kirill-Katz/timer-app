@@ -1,11 +1,12 @@
 import Dexie, { type Table } from 'dexie';
-import type { OperationQueueItem, Project, Task, TimeLog } from '../types';
+import type { BootstrapState, OperationQueueItem, Project, Task, TimeLog } from '../types';
 
 class TimeTrackerDatabase extends Dexie {
   projects!: Table<Project, string>;
   tasks!: Table<Task, string>;
   time_logs!: Table<TimeLog, string>;
   operation_queue!: Table<OperationQueueItem, string>;
+  bootstrap_state!: Table<BootstrapState, string>;
 
   constructor() {
     super('offline_time_tracker');
@@ -20,6 +21,13 @@ class TimeTrackerDatabase extends Dexie {
       tasks: 'id, user_id, project_id, [user_id+project_id], [user_id+archived], created_at, updated_at',
       time_logs: 'id, user_id, project_id, task_id, start_time, [user_id+start_time], deleted_at, updated_at',
       operation_queue: 'id, user_id, status, created_at, [user_id+created_at]'
+    });
+    this.version(4).stores({
+      projects: 'id, user_id, [user_id+archived], created_at, updated_at',
+      tasks: 'id, user_id, project_id, [user_id+project_id], [user_id+archived], created_at, updated_at',
+      time_logs: 'id, user_id, project_id, task_id, start_time, [user_id+start_time], deleted_at, updated_at',
+      operation_queue: 'id, user_id, status, created_at, [user_id+created_at]',
+      bootstrap_state: 'user_id, completed_at'
     });
   }
 }
@@ -45,4 +53,15 @@ export function newId(): string {
 
 export async function getPendingOperationCount(userId: string): Promise<number> {
   return db.operation_queue.where('user_id').equals(userId).count();
+}
+
+export async function hasCompletedBootstrap(userId: string): Promise<boolean> {
+  return Boolean(await db.bootstrap_state.get(userId));
+}
+
+export async function markBootstrapComplete(userId: string): Promise<void> {
+  await db.bootstrap_state.put({
+    user_id: userId,
+    completed_at: nowIso()
+  });
 }

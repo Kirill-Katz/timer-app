@@ -1,4 +1,4 @@
-import { db, getPendingOperationCount, newId } from './local-db';
+import { db, getPendingOperationCount, hasCompletedBootstrap, markBootstrapComplete, newId } from './local-db';
 import Dexie from 'dexie';
 import { supabase } from './supabase';
 import type { EntityType, OperationQueueItem, Project, QueueOperation, Task, TimeLog } from '../types';
@@ -98,11 +98,25 @@ export async function refreshFromRemote(userId: string): Promise<void> {
   refreshingUsers.add(userId);
 
   try {
-    await hydrateFromRemote(userId);
+    await bootstrapFromRemote(userId);
   } finally {
     refreshingUsers.delete(userId);
     await emit(userId);
   }
+}
+
+export async function bootstrapFromRemote(userId: string): Promise<boolean> {
+  if (await hasCompletedBootstrap(userId)) {
+    return false;
+  }
+
+  if (!navigator.onLine) {
+    throw new Error('Initial download requires an internet connection.');
+  }
+
+  await hydrateFromRemote(userId);
+  await markBootstrapComplete(userId);
+  return true;
 }
 
 export async function syncQueue(userId: string): Promise<void> {

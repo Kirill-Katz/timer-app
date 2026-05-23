@@ -40,6 +40,11 @@ export interface OperationQueueItem {
   created_at: string;
 }
 
+export interface BootstrapState {
+  user_id: string;
+  completed_at: string;
+}
+
 export interface EditableTimeLog {
   id?: string;
   project_id: string;

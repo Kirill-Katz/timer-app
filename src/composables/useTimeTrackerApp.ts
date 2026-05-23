@@ -1,6 +1,6 @@
 import { computed, onMounted, onUnmounted, proxyRefs, reactive, ref } from 'vue';
 import { supabase, getCurrentUserId, handleAuthRedirect } from '../services/supabase';
-import { hydrateFromRemote, refreshFromRemote, startBackgroundSync, subscribeSyncState, type SyncState } from '../services/sync-queue';
+import { bootstrapFromRemote, refreshFromRemote, startBackgroundSync, subscribeSyncState, type SyncState } from '../services/sync-queue';
 import { createProject, listProjects, setProjectArchived, updateProject } from '../stores/projects';
 import { createTask, listTasks, listTasksForProject, setTaskArchived, updateTask } from '../stores/tasks';
 import { getRunningLog, listTimeLogs, softDeleteTimeLog, startTimer, stopTimer, updateTimeLog } from '../stores/time-logs';
@@ -164,7 +164,7 @@ export function useTimeTrackerApp() {
     stopSync?.();
 
     try {
-      await hydrateFromRemote(nextUserId);
+      await bootstrapFromRemote(nextUserId);
     } catch (error) {
       syncState.lastError = error instanceof Error ? error.message : String(error);
     }
