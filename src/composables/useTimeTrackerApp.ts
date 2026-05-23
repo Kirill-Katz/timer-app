@@ -184,15 +184,26 @@ export function useTimeTrackerApp() {
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: requestedEmail,
       password: password.value
     });
 
-    authMessage.value = error ? error.message : '';
-    if (!error) {
-      password.value = '';
+    if (error) {
+      authMessage.value = error.message;
+      return;
     }
+
+    const nextUserId = data.session?.user.id ?? data.user?.id ?? (await getCurrentUserId());
+    if (!nextUserId) {
+      authMessage.value = 'Signed in, but the session did not initialize on this device.';
+      return;
+    }
+
+    password.value = '';
+    authMessage.value = '';
+
+    await enterUserScope(nextUserId);
   }
 
   async function signOut() {
