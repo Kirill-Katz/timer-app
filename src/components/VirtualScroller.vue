@@ -14,10 +14,12 @@ const props = withDefaults(defineProps<{
   getItemHeight?: (item: T, index: number) => number;
   itemKey?: string;
   overscan?: number;
+  scrollEnabled?: boolean;
 }>(), {
   itemHeight: 56,
   itemKey: 'id',
-  overscan: 6
+  overscan: 6,
+  scrollEnabled: true
 });
 
 defineSlots<{
@@ -139,7 +141,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="containerRef" class="min-h-0 overflow-auto" @scroll="handleScroll">
+  <div ref="containerRef" class="min-h-0" :class="scrollEnabled ? 'overflow-auto' : 'overflow-hidden'" data-sheet-scroll @scroll="handleScroll">
     <div v-if="items.length" class="relative" :style="{ height: `${metrics.totalHeight}px` }">
       <div
         v-for="row in visibleRows"

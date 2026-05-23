@@ -130,8 +130,9 @@ watch(
       </div>
     </MobileBottomSheet>
 
-    <MobileBottomSheet :show="app.projectsSheetOpen" min-height-class="min-h-[62vh]" @close="app.closeSheets">
-          <div v-if="app.taskSheetProjectId" class="grid gap-3">
+    <MobileBottomSheet :show="app.projectsSheetOpen" expandable :initial-height-ratio="0.62" :max-top-offset="12" @close="app.closeSheets">
+      <template #default="{ expanded }">
+          <div v-if="app.taskSheetProjectId" class="flex min-h-0 flex-1 flex-col gap-3">
             <div class="relative flex min-h-10 items-center justify-center">
               <MobileBackButton class="absolute left-0" aria-label="Back to projects" @click="app.taskSheetProjectId = null; app.taskCreateOpen = false" />
               <div class="mx-14 flex min-w-0 items-center justify-center gap-2">
@@ -139,7 +140,7 @@ watch(
                 <h2 class="truncate text-center text-xl font-black">{{ app.taskSheetProject?.name ?? 'Tasks' }}</h2>
               </div>
             </div>
-            <div v-if="app.taskCreateOpen" class="grid gap-2">
+            <div v-if="app.taskCreateOpen" class="grid shrink-0 gap-2">
               <input v-model="app.mobileTaskName" class="min-h-12 rounded-lg border border-line bg-panel px-3 text-ink placeholder:text-stone-500" placeholder="Task name" />
               <div class="grid grid-cols-2 gap-2">
                 <button class="btn-secondary inline-flex min-h-11 items-center justify-center rounded-xl px-4 font-bold" type="button" @click="app.taskCreateOpen = false; app.mobileTaskName = ''">
@@ -150,10 +151,10 @@ watch(
                 </button>
               </div>
             </div>
-            <button v-else class="btn-primary inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 font-black" type="button" @click="app.taskCreateOpen = true">
+            <button v-else class="btn-primary inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-4 font-black" type="button" @click="app.taskCreateOpen = true">
               <Plus :size="18" /> Add a new task
             </button>
-            <VirtualScroller class="max-h-[40vh] pb-8" :items="app.taskSheetTasks" :item-height="52" item-key="id" :overscan="8">
+            <VirtualScroller class="min-h-0 flex-1 pb-8" :items="app.taskSheetTasks" :item-height="52" item-key="id" :overscan="8" :scroll-enabled="expanded">
               <template #default="{ item: task }">
                 <article class="grid h-full grid-cols-[2.5rem_1fr_auto] items-center gap-2 rounded-lg bg-panel px-3 py-2" :class="[task.archived ? 'opacity-55' : '', task.completed ? 'opacity-70' : '']">
                   <button
@@ -191,11 +192,11 @@ watch(
               </div>
             </form>
           </div>
-          <div v-else class="grid gap-3">
-            <button class="btn-primary inline-flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 font-black" type="button" @click="app.openProjectCreate">
+          <div v-else class="flex min-h-0 flex-1 flex-col gap-3">
+            <button class="btn-primary inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-4 font-black" type="button" @click="app.openProjectCreate">
               <Plus :size="18" /> Add new project
             </button>
-            <VirtualScroller class="max-h-[46vh] pb-8" :items="app.projects" :item-height="56" item-key="id" :overscan="8">
+            <VirtualScroller class="min-h-0 flex-1 pb-8" :items="app.projects" :item-height="56" item-key="id" :overscan="8" :scroll-enabled="expanded">
               <template #default="{ item: project }">
                 <article
                   class="relative h-full overflow-hidden rounded-lg bg-sage/15"
@@ -218,6 +219,7 @@ watch(
               </template>
             </VirtualScroller>
           </div>
+      </template>
     </MobileBottomSheet>
 
     <MobileOverlay :show="app.settingsOpen" content-class="px-3 py-4">
