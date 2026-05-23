@@ -49,6 +49,16 @@ function handleWindowScroll() {
   }
 }
 
+function handleProjectLogScroll(event: Event) {
+  const target = event.target as HTMLElement | null;
+  if (!target || props.app.loadingMoreProjectLogs || !props.app.hasMoreProjectLogs) return;
+
+  const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
+  if (remaining <= 120) {
+    void props.app.loadMoreProjectLogs();
+  }
+}
+
 onMounted(() => {
   window.addEventListener('scroll', handleWindowScroll, { passive: true });
 });
@@ -111,7 +121,7 @@ watch(
       </div>
     </section>
 
-    <nav v-if="!app.editingLogId && !app.detailGroup && !app.settingsOpen" class="fixed inset-x-3 bottom-3 z-40 grid grid-cols-[3.5rem_1fr_3.5rem] items-center gap-2 rounded-2xl border border-line bg-panel/95 p-2 shadow-soft backdrop-blur">
+    <nav v-if="!app.editingLogId && !app.detailGroup && !app.projectLogDetailProjectId && !app.settingsOpen" class="fixed inset-x-3 bottom-3 z-40 grid grid-cols-[3.5rem_1fr_3.5rem] items-center gap-2 rounded-2xl border border-line bg-panel/95 p-2 shadow-soft backdrop-blur">
       <button class="btn-primary btn-icon inline-flex min-h-12 items-center justify-center" type="button" title="Menu" @click="app.openMenuSheet">
         <Menu :size="22" />
       </button>
@@ -130,8 +140,7 @@ watch(
       </div>
     </MobileBottomSheet>
 
-    <MobileBottomSheet :show="app.projectsSheetOpen" expandable :initial-height-ratio="0.62" :max-top-offset="12" @close="app.closeSheets">
-      <template #default="{ expanded }">
+    <MobileBottomSheet :show="app.projectsSheetOpen" min-height-class="min-h-[62vh]" @close="app.closeSheets">
           <div v-if="app.taskSheetProjectId" class="flex min-h-0 flex-1 flex-col gap-3">
             <div class="relative flex min-h-10 items-center justify-center">
               <MobileBackButton class="absolute left-0" aria-label="Back to projects" @click="app.taskSheetProjectId = null; app.taskCreateOpen = false" />
@@ -154,7 +163,7 @@ watch(
             <button v-else class="btn-primary inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-4 font-black" type="button" @click="app.taskCreateOpen = true">
               <Plus :size="18" /> Add a new task
             </button>
-            <VirtualScroller class="min-h-0 flex-1 pb-8" :items="app.taskSheetTasks" :item-height="52" item-key="id" :overscan="8" :scroll-enabled="expanded">
+            <VirtualScroller class="max-h-[40vh] pb-8" :items="app.taskSheetTasks" :item-height="52" item-key="id" :overscan="8">
               <template #default="{ item: task }">
                 <article class="grid h-full grid-cols-[2.5rem_1fr_auto] items-center gap-2 rounded-lg bg-panel px-3 py-2" :class="[task.archived ? 'opacity-55' : '', task.completed ? 'opacity-70' : '']">
                   <button
@@ -196,7 +205,7 @@ watch(
             <button class="btn-primary inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-4 font-black" type="button" @click="app.openProjectCreate">
               <Plus :size="18" /> Add new project
             </button>
-            <VirtualScroller class="min-h-0 flex-1 pb-8" :items="app.projects" :item-height="56" item-key="id" :overscan="8" :scroll-enabled="expanded">
+            <VirtualScroller class="max-h-[46vh] pb-8" :items="app.projects" :item-height="56" item-key="id" :overscan="8">
               <template #default="{ item: project }">
                 <article
                   class="relative h-full overflow-hidden rounded-lg bg-sage/15"
@@ -208,7 +217,7 @@ watch(
                   <div class="absolute inset-y-0 right-0 flex w-24 items-center justify-center bg-sage/20 text-sm font-black text-ink backdrop-blur">
                     Tasks
                   </div>
-                  <div class="relative grid h-full touch-pan-y grid-cols-[auto_1fr_auto] items-center gap-2 rounded-lg bg-panel px-3 py-2 transition-transform duration-150 ease-out" :class="{ 'duration-0': app.swipingProjectId === project.id }" :style="app.projectSwipeStyle(project.id)">
+                  <div class="relative grid h-full touch-pan-y grid-cols-[auto_1fr_auto] items-center gap-2 rounded-lg bg-panel px-3 py-2 transition-transform duration-150 ease-out" :class="{ 'duration-0': app.swipingProjectId === project.id }" :style="app.projectSwipeStyle(project.id)" @click="app.openProjectLogDetail(project.id)">
                     <span class="h-3 w-3 rounded-full border border-black/10" :style="{ backgroundColor: project.color }"></span>
                     <span class="truncate font-black">{{ project.name }}</span>
                     <button class="glass-start inline-flex h-8 w-28 shrink-0 items-center justify-center gap-1 rounded-full px-2.5 text-xs font-black tabular-nums" type="button" @click.stop="app.switchTimer(project.id)">
@@ -219,7 +228,6 @@ watch(
               </template>
             </VirtualScroller>
           </div>
-      </template>
     </MobileBottomSheet>
 
     <MobileOverlay :show="app.settingsOpen" content-class="px-3 py-4">
@@ -280,6 +288,29 @@ watch(
               <p class="text-xs font-semibold text-stone-300">{{ app.formatDuration(log.start_time, log.end_time) }}</p>
             </div>
           </article>
+        </div>
+    </MobileOverlay>
+
+    <MobileOverlay :show="Boolean(app.projectLogDetailProjectId)" content-class="px-4 py-5" @scroll.passive="handleProjectLogScroll">
+        <MobileCenteredHeader
+          v-if="app.projectLogDetailProject"
+          class="mb-4"
+          :title="app.projectLogDetailProject.name"
+          :color="app.projectLogDetailProject.color"
+          @back="app.closeProjectLogDetail"
+        />
+        <div class="grid gap-2">
+          <article v-for="log in app.projectLogDetailLogs" :key="log.id" class="grid cursor-pointer grid-cols-1 border-b border-line px-1 py-2" @click="app.openLogEditor(log)">
+            <div class="min-w-0">
+              <p class="font-black">{{ app.formatTime(log.start_time) }} - {{ log.end_time ? app.formatTime(log.end_time) : 'Running' }}</p>
+              <p class="text-xs font-semibold text-stone-300">
+                {{ app.formatDateTime(log.start_time) }} · {{ app.taskById(log.task_id)?.name ?? 'No task' }} · {{ app.formatDuration(log.start_time, log.end_time) }}
+              </p>
+            </div>
+          </article>
+          <p v-if="app.loadingMoreProjectLogs" class="px-1 py-4 text-center text-sm font-bold text-stone-300">Loading older logs...</p>
+          <p v-else-if="!app.hasMoreProjectLogs && app.projectLogDetailLogs.length" class="px-1 py-4 text-center text-sm font-bold text-stone-500">Reached the end of project history.</p>
+          <p v-if="!app.projectLogDetailLogs.length && !app.loadingMoreProjectLogs" class="px-1 py-10 text-center text-sm font-bold text-stone-300">No logs for this project yet.</p>
         </div>
     </MobileOverlay>
 

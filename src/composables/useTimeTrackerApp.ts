@@ -5,7 +5,7 @@ import { hasLogAggregates, rebuildLogAggregates } from '../services/log-aggregat
 import { ensureBootstrapData, reloadFromRemote, startBackgroundSync, subscribeSyncState, type SyncState } from '../services/sync-queue';
 import { createProject, listProjects, setProjectArchived, updateProject } from '../stores/projects';
 import { createTask, listTasks, listTasksForProject, setTaskArchived, setTaskCompleted, updateTask } from '../stores/tasks';
-import { countTimeLogs, getRunningLog, listTimeLogs, listTimeLogsForGroup, listTimeLogsPage, softDeleteTimeLog, startTimer, stopTimer, sumProjectTimeLogDurations, sumTaskTimeLogDurations, updateTimeLog } from '../stores/time-logs';
+import { countProjectTimeLogs, countTimeLogs, getRunningLog, listProjectTimeLogsPage, listTimeLogs, listTimeLogsForGroup, listTimeLogsPage, softDeleteTimeLog, startTimer, stopTimer, sumProjectTimeLogDurations, sumTaskTimeLogDurations, updateTimeLog } from '../stores/time-logs';
 import type { DetailGroup, GroupedLogEntry, GroupedLogSection, Project, Task, TimeLog } from '../types';
 
 export function useTimeTrackerApp() {
@@ -24,6 +24,8 @@ export function useTimeTrackerApp() {
   const taskDurationTotals = ref<Record<string, number>>({});
   const groupedLogs = ref<GroupedLogSection[]>([]);
   const detailLogs = ref<TimeLog[]>([]);
+  const projectLogDetailProjectId = ref<string | null>(null);
+  const projectLogDetailLogs = ref<TimeLog[]>([]);
   const selectedProjectId = ref('');
   const selectedTaskId = ref<string | null>(null);
   const includeArchived = ref(false);
@@ -47,6 +49,10 @@ export function useTimeTrackerApp() {
   const totalLogCount = ref(0);
   const hasMoreLogs = ref(true);
   const loadingMoreLogs = ref(false);
+  const projectLogOffset = ref(0);
+  const totalProjectLogCount = ref(0);
+  const hasMoreProjectLogs = ref(true);
+  const loadingMoreProjectLogs = ref(false);
   const timelineScrollTop = ref(0);
   const ticker = ref(Date.now());
   const syncState = reactive<SyncState>({
@@ -78,6 +84,7 @@ export function useTimeTrackerApp() {
 
   const selectedProject = computed(() => projects.value.find((project) => project.id === selectedProjectId.value));
   const taskSheetProject = computed(() => projects.value.find((project) => project.id === taskSheetProjectId.value));
+  const projectLogDetailProject = computed(() => projects.value.find((project) => project.id === projectLogDetailProjectId.value));
   const taskSheetTasks = computed(() => sortTasks(allTasks.value.filter((task) => task.project_id === taskSheetProjectId.value && (includeArchived.value || !task.archived))));
   const activeTasks = computed(() => sortTasks(tasks.value.filter((task) => includeArchived.value || !task.archived)));
   const logFormTasks = computed(() => sortTasks(allTasks.value.filter((task) => task.project_id === logForm.project_id && (includeArchived.value || !task.archived))));
@@ -211,6 +218,24 @@ export function useTimeTrackerApp() {
       }
       detailLogs.value = nextDetailLogs.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
     }
+
+    if (projectLogDetailProjectId.value) {
+      const previousMatchesProject = Boolean(previous && !previous.deleted_at && previous.project_id === projectLogDetailProjectId.value);
+      const nextMatchesProject = Boolean(next && !next.deleted_at && next.project_id === projectLogDetailProjectId.value);
+      if (!previousMatchesProject && nextMatchesProject) {
+        totalProjectLogCount.value += 1;
+      } else if (previousMatchesProject && !nextMatchesProject) {
+        totalProjectLogCount.value = Math.max(0, totalProjectLogCount.value - 1);
+      }
+
+      const nextProjectLogs = projectLogDetailLogs.value.filter((log) => log.id !== previous?.id && log.id !== next?.id);
+      if (next && nextMatchesProject) {
+        nextProjectLogs.push(next);
+      }
+      projectLogDetailLogs.value = sortLogsDesc(nextProjectLogs);
+      projectLogOffset.value = projectLogDetailLogs.value.length;
+      hasMoreProjectLogs.value = projectLogOffset.value < totalProjectLogCount.value;
+    }
   }
 
   async function loadInitialLogs() {
@@ -246,6 +271,41 @@ export function useTimeTrackerApp() {
       rebuildDerivedLogState();
     } finally {
       loadingMoreLogs.value = false;
+    }
+  }
+
+  async function loadInitialProjectLogs(projectId: string) {
+    if (!userId.value) return;
+
+    projectLogOffset.value = 0;
+    hasMoreProjectLogs.value = true;
+    loadingMoreProjectLogs.value = false;
+    totalProjectLogCount.value = await countProjectTimeLogs(userId.value, projectId);
+
+    const page = await listProjectTimeLogsPage(userId.value, projectId, 0, MOBILE_TIMELINE_PAGE_SIZE);
+    projectLogDetailLogs.value = page;
+    projectLogOffset.value = page.length;
+    hasMoreProjectLogs.value = projectLogOffset.value < totalProjectLogCount.value;
+  }
+
+  async function loadMoreProjectLogs() {
+    if (!userId.value || !projectLogDetailProjectId.value || loadingMoreProjectLogs.value || !hasMoreProjectLogs.value) return;
+
+    loadingMoreProjectLogs.value = true;
+    try {
+      const page = await listProjectTimeLogsPage(userId.value, projectLogDetailProjectId.value, projectLogOffset.value, MOBILE_TIMELINE_PAGE_SIZE);
+      if (!page.length) {
+        hasMoreProjectLogs.value = false;
+        return;
+      }
+
+      const nextLogs = projectLogDetailLogs.value.slice();
+      nextLogs.push(...page);
+      projectLogDetailLogs.value = sortLogsDesc(nextLogs);
+      projectLogOffset.value += page.length;
+      hasMoreProjectLogs.value = projectLogOffset.value < totalProjectLogCount.value;
+    } finally {
+      loadingMoreProjectLogs.value = false;
     }
   }
 
@@ -332,6 +392,8 @@ export function useTimeTrackerApp() {
     taskDurationTotals.value = {};
     groupedLogs.value = [];
     detailLogs.value = [];
+    projectLogDetailProjectId.value = null;
+    projectLogDetailLogs.value = [];
     runningLog.value = undefined;
     selectedProjectId.value = '';
     selectedTaskId.value = null;
@@ -339,6 +401,10 @@ export function useTimeTrackerApp() {
     totalLogCount.value = 0;
     hasMoreLogs.value = true;
     loadingMoreLogs.value = false;
+    projectLogOffset.value = 0;
+    totalProjectLogCount.value = 0;
+    hasMoreProjectLogs.value = true;
+    loadingMoreProjectLogs.value = false;
     syncState.pendingCount = 0;
     closeSheets();
   }
@@ -562,6 +628,7 @@ export function useTimeTrackerApp() {
 
   async function openLogDetail(day: string, projectId: string, taskId: string | null) {
     closeLogEditor();
+    closeProjectLogDetail();
     settingsOpen.value = false;
     closeSheets();
     detailGroup.value = { day, projectId, taskId };
@@ -575,10 +642,30 @@ export function useTimeTrackerApp() {
     detailLogs.value = [];
   }
 
+  async function openProjectLogDetail(projectId: string) {
+    closeLogEditor();
+    closeLogDetail();
+    settingsOpen.value = false;
+    closeSheets();
+    projectLogDetailProjectId.value = projectId;
+    projectLogDetailLogs.value = [];
+    await loadInitialProjectLogs(projectId);
+  }
+
+  function closeProjectLogDetail() {
+    projectLogDetailProjectId.value = null;
+    projectLogDetailLogs.value = [];
+    projectLogOffset.value = 0;
+    totalProjectLogCount.value = 0;
+    hasMoreProjectLogs.value = true;
+    loadingMoreProjectLogs.value = false;
+  }
+
   function openSettings() {
     previousMobileScreen.value = detailGroup.value ? 'detail' : 'main';
     closeLogEditor();
     closeLogDetail();
+    closeProjectLogDetail();
     closeSheets();
     settingsOpen.value = true;
   }
@@ -624,6 +711,7 @@ export function useTimeTrackerApp() {
   function openTimeline() {
     closeLogEditor();
     closeLogDetail();
+    closeProjectLogDetail();
     closeSheets();
     settingsOpen.value = false;
     timelineScrollTop.value = 0;
@@ -810,6 +898,7 @@ export function useTimeTrackerApp() {
     runningLog,
     editingLogId,
     detailGroup,
+    projectLogDetailProjectId,
     settingsOpen,
     menuSheetOpen,
     projectsSheetOpen,
@@ -825,6 +914,7 @@ export function useTimeTrackerApp() {
     logForm,
     selectedProject,
     taskSheetProject,
+    projectLogDetailProject,
     taskSheetTasks,
     activeTasks,
     logFormTasks,
@@ -833,14 +923,18 @@ export function useTimeTrackerApp() {
     currentEditingLog,
     groupedLogs,
     detailLogs,
+    projectLogDetailLogs,
     hasMoreLogs,
     loadingMoreLogs,
+    hasMoreProjectLogs,
+    loadingMoreProjectLogs,
     timelineScrollTop,
     signIn,
     signOut,
     synchronizeFromRemote,
     refreshLocalData,
     loadMoreLogs,
+    loadMoreProjectLogs,
     setTimelineScrollTop,
     addProject,
     addMobileProject,
@@ -860,6 +954,8 @@ export function useTimeTrackerApp() {
     closeLogEditor,
     openLogDetail,
     closeLogDetail,
+    openProjectLogDetail,
+    closeProjectLogDetail,
     openSettings,
     closeSettings,
     goBackFromEditor,
