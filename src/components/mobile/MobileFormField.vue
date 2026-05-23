@@ -5,7 +5,7 @@ defineProps<{
 </script>
 
 <template>
-  <label class="grid gap-1 text-sm font-bold text-stone-300">
+  <label class="grid gap-1 text-sm font-normal text-stone-300">
     {{ label }}
     <slot></slot>
   </label>

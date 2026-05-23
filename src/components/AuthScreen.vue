@@ -17,7 +17,7 @@ const emit = defineEmits<{
 <template>
   <section class="mx-auto mt-[12vh] grid max-w-xl gap-4 rounded-lg border border-line bg-panel p-4 shadow-soft sm:p-5">
     <div class="grid gap-2">
-      <h2 class="text-2xl font-black">Sign in</h2>
+      <h2 class="text-2xl font-medium">Sign in</h2>
       <p class="text-sm leading-6 text-stone-300">Use your Supabase account so RLS can protect your tracker data.</p>
     </div>
     <form class="grid gap-2" @submit.prevent="emit('submit')">
@@ -37,7 +37,7 @@ const emit = defineEmits<{
         autocomplete="current-password"
         @input="emit('update:password', ($event.target as HTMLInputElement).value)"
       />
-      <button class="btn-primary inline-flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 font-bold" type="submit">
+      <button class="btn-primary inline-flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 font-normal" type="submit">
         <Check :size="18" /> Sign in
       </button>
     </form>

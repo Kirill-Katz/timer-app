@@ -18,7 +18,7 @@ const emit = defineEmits<{
 
 <template>
   <button
-    class="btn-secondary btn-icon inline-flex min-h-10 items-center justify-center font-bold"
+    class="btn-secondary btn-icon inline-flex min-h-10 items-center justify-center font-normal"
     :class="compact ? 'w-12' : 'gap-2 px-3'"
     type="button"
     :aria-label="ariaLabel"

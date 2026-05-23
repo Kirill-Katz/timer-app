@@ -25,8 +25,8 @@ const emit = defineEmits<{
     <MobileBackButton class="absolute left-0" :label="backLabel" :aria-label="backAriaLabel" @click="emit('back')" />
     <div class="mx-14 flex min-w-0 items-center justify-center gap-2">
       <span v-if="color" class="h-3 w-3 flex-none rounded-full border border-black/10" :style="{ backgroundColor: color }"></span>
-      <h2 class="truncate text-center text-xl font-black">{{ title }}</h2>
+      <h2 class="truncate text-center text-xl font-medium">{{ title }}</h2>
     </div>
-    <p v-if="subtitle" class="mx-14 truncate text-center text-sm font-bold text-stone-300">{{ subtitle }}</p>
+    <p v-if="subtitle" class="mx-14 truncate text-center text-sm font-normal text-stone-300">{{ subtitle }}</p>
   </div>
 </template>
