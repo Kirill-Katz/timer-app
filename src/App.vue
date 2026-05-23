@@ -15,8 +15,10 @@ const app = useTimeTrackerApp();
     <AuthScreen
       v-if="!app.userId"
       :email="app.email"
+      :password="app.password"
       :auth-message="app.authMessage"
       @update:email="app.email = $event"
+      @update:password="app.password = $event"
       @submit="app.signIn"
     />
     <template v-else>

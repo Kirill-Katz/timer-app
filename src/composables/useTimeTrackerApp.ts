@@ -15,8 +15,8 @@ export interface DetailGroup {
 export function useTimeTrackerApp() {
   const userId = ref<string | null>(null);
   const email = ref('');
+  const password = ref('');
   const authMessage = ref('');
-  const allowedEmail = (import.meta.env.VITE_ALLOWED_EMAIL ?? 'cat.chirill@gmail.com').toLowerCase();
   const projects = ref<Project[]>([]);
   const tasks = ref<Task[]>([]);
   const allTasks = ref<Task[]>([]);
@@ -179,17 +179,20 @@ export function useTimeTrackerApp() {
   async function signIn() {
     const requestedEmail = email.value.trim().toLowerCase();
     if (!requestedEmail) return;
-    if (requestedEmail !== allowedEmail) {
-      authMessage.value = 'This app is restricted to the configured owner email.';
+    if (!password.value) {
+      authMessage.value = 'Enter your password.';
       return;
     }
 
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await supabase.auth.signInWithPassword({
       email: requestedEmail,
-      options: { emailRedirectTo: window.location.origin }
+      password: password.value
     });
 
-    authMessage.value = error ? error.message : 'Check your email for the sign-in link.';
+    authMessage.value = error ? error.message : '';
+    if (!error) {
+      password.value = '';
+    }
   }
 
   async function signOut() {
@@ -566,6 +569,7 @@ export function useTimeTrackerApp() {
   return proxyRefs({
     userId,
     email,
+    password,
     authMessage,
     projects,
     tasks,
