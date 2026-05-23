@@ -184,9 +184,9 @@ watch(() => props.app.projectLogDetailProjectId, (projectId) => {
             <button v-else class="btn-primary inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-4 font-black" type="button" @click="app.taskCreateOpen = true">
               <Plus :size="18" /> Add a new task
             </button>
-            <VirtualScroller class="max-h-[40vh] pb-8" :items="app.taskSheetTasks" :item-height="52" item-key="id" :overscan="8">
+            <VirtualScroller class="max-h-[40vh] pb-8" :items="app.taskSheetTasks" :item-height="64" item-key="id" :overscan="8">
               <template #default="{ item: task }">
-                <article class="grid h-full grid-cols-[2.5rem_1fr_auto] items-center gap-2 rounded-lg bg-panel px-3 py-2" :class="[task.archived ? 'opacity-55' : '', task.completed ? 'opacity-70' : '']">
+                <article class="grid h-full grid-cols-[2.25rem_1fr_auto] items-start gap-1.5 rounded-lg bg-panel px-2.5 py-1.5" :class="[task.archived ? 'opacity-55' : '', task.completed ? 'opacity-70' : '']">
                   <button
                     class="relative inline-flex h-6 w-6 items-center justify-center rounded-full border-2 transition"
                     :class="task.completed ? 'border-sage bg-sage text-ink' : 'border-stone-300 bg-transparent text-transparent'"
@@ -196,8 +196,8 @@ watch(() => props.app.projectLogDetailProjectId, (projectId) => {
                   >
                     <span v-if="task.completed" class="h-2.5 w-2.5 rounded-full bg-ink"></span>
                   </button>
-                  <span class="truncate font-black">{{ task.name }}</span>
-                  <button class="glass-start inline-flex h-8 w-28 shrink-0 items-center justify-center gap-1 rounded-full px-2.5 text-xs font-black tabular-nums" type="button" @click="app.switchTimer(task.project_id, task.id)">
+                  <span class="min-w-0 whitespace-normal break-words text-sm font-semibold leading-snug">{{ task.name }}</span>
+                  <button class="glass-start mt-0.5 inline-flex h-7 w-24 shrink-0 items-center justify-center gap-1 self-start rounded-full px-2 text-[11px] font-black tabular-nums" type="button" @click="app.switchTimer(task.project_id, task.id)">
                     <Play :size="14" fill="currentColor" /> {{ app.formatDurationMs(app.taskTotalDurationMs(task.id)) }}
                   </button>
                 </article>
@@ -403,10 +403,10 @@ watch(() => props.app.projectLogDetailProjectId, (projectId) => {
             <h3 class="text-xl font-black">{{ app.editPickerMode === 'project' ? 'Project' : 'Task' }}</h3>
           </div>
           <div class="grid max-h-[50vh] gap-2 overflow-auto pb-4">
-            <button v-if="app.editPickerMode === 'task'" class="inline-flex min-h-12 items-center justify-start rounded-xl bg-panel px-4 text-left font-black text-ink" type="button" @click="app.selectEditTask(null)">
+            <button v-if="app.editPickerMode === 'task'" class="inline-flex min-h-12 items-center justify-start rounded-xl bg-panel px-4 text-left font-semibold text-ink" type="button" @click="app.selectEditTask(null)">
               No task
             </button>
-            <button v-for="option in app.editPickerMode === 'project' ? app.projects : app.logFormTasks" :key="option.id" class="inline-flex min-h-12 items-center justify-start gap-2 rounded-xl bg-panel px-4 text-left font-black text-ink" type="button" @click="app.editPickerMode === 'project' ? app.selectEditProject(option.id) : app.selectEditTask(option.id)">
+            <button v-for="option in app.editPickerMode === 'project' ? app.projects : app.logFormTasks" :key="option.id" class="inline-flex min-h-12 items-center justify-start gap-2 rounded-xl bg-panel px-4 text-left font-semibold text-ink" type="button" @click="app.editPickerMode === 'project' ? app.selectEditProject(option.id) : app.selectEditTask(option.id)">
               <span v-if="app.editPickerMode === 'project'" class="h-3 w-3 flex-none rounded-full border border-black/10" :style="{ backgroundColor: app.projectById(option.id)?.color ?? '#777' }"></span>
               <span>{{ option.name }}</span>
             </button>
