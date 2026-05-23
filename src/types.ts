@@ -46,10 +46,38 @@ export interface BootstrapState {
   completed_at: string;
 }
 
+export interface LogAggregate {
+  id: string;
+  user_id: string;
+  entity_type: 'project' | 'task';
+  entity_id: string;
+  total_ms: number;
+  updated_at: string;
+}
+
 export interface EditableTimeLog {
   id?: string;
   project_id: string;
   task_id: string | null;
   start_time: string;
   end_time: string | null;
+}
+
+export interface DetailGroup {
+  day: string;
+  projectId: string;
+  taskId: string | null;
+}
+
+export interface GroupedLogEntry {
+  projectId: string;
+  taskId: string | null;
+  totalMs: number;
+  latestStart: string;
+}
+
+export interface GroupedLogSection {
+  label: string;
+  totalMs: number;
+  entries: GroupedLogEntry[];
 }

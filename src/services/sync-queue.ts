@@ -1,4 +1,5 @@
 import { db, getPendingOperationCount, hasCompletedBootstrap, markBootstrapComplete, newId } from './local-db';
+import { rebuildLogAggregates } from './log-aggregates';
 import Dexie from 'dexie';
 import { supabase } from './supabase';
 import type { EntityType, OperationQueueItem, Project, QueueOperation, Task, TimeLog } from '../types';
@@ -53,7 +54,7 @@ export async function enqueueOperation(
     created_at: new Date().toISOString()
   };
 
-  await db.transaction('rw', db.operation_queue, db.projects, db.tasks, db.time_logs, async () => {
+  await db.transaction('rw', [db.operation_queue, db.projects, db.tasks, db.time_logs, db.log_aggregates], async () => {
     await db.operation_queue.add(op);
     await applyLocal();
     await db.operation_queue.update(op.id, { status: 'saved_locally' });
@@ -111,13 +112,21 @@ export async function ensureBootstrapData(userId: string, requireOnline = true):
   bootstrappingUsers.add(userId);
 
   try {
-    await hydrateFromRemote(userId);
-    await markBootstrapComplete(userId);
+    await reloadFromRemote(userId);
     return true;
   } finally {
     bootstrappingUsers.delete(userId);
     await emit(userId);
   }
+}
+
+export async function reloadFromRemote(userId: string): Promise<void> {
+  if (!navigator.onLine) {
+    throw new Error('Remote synchronization requires an internet connection.');
+  }
+
+  await hydrateFromRemote(userId);
+  await markBootstrapComplete(userId);
 }
 
 export async function syncQueue(userId: string): Promise<void> {
@@ -196,18 +205,53 @@ export async function hydrateFromRemote(userId: string): Promise<void> {
   if (!navigator.onLine) return;
 
   const [projects, tasks, timeLogs] = await Promise.all([
-    supabase.from('projects').select('*').eq('user_id', userId),
-    supabase.from('tasks').select('*').eq('user_id', userId),
-    supabase.from('time_logs').select('*').eq('user_id', userId)
+    fetchAllRows<Project>('projects', userId),
+    fetchAllRows<Task>('tasks', userId),
+    fetchAllRows<TimeLog>('time_logs', userId)
   ]);
 
-  if (projects.error || tasks.error || timeLogs.error) {
-    throw new Error(projects.error?.message ?? tasks.error?.message ?? timeLogs.error?.message);
+  await db.transaction('rw', db.projects, db.tasks, db.time_logs, async () => {
+    await db.projects.where('user_id').equals(userId).delete();
+    await db.tasks.where('user_id').equals(userId).delete();
+    await db.time_logs.where('user_id').equals(userId).delete();
+
+    if (projects.length) {
+      await db.projects.bulkPut(projects);
+    }
+    if (tasks.length) {
+      await db.tasks.bulkPut(tasks);
+    }
+    if (timeLogs.length) {
+      await db.time_logs.bulkPut(timeLogs);
+    }
+  });
+
+  await rebuildLogAggregates(userId);
+}
+
+async function fetchAllRows<T>(table: 'projects' | 'tasks' | 'time_logs', userId: string, pageSize = 1000): Promise<T[]> {
+  const rows: T[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const to = from + pageSize - 1;
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      throw error;
+    }
+
+    const page = (data ?? []) as T[];
+    rows.push(...page);
+
+    if (page.length < pageSize) {
+      break;
+    }
   }
 
-  await db.transaction('rw', db.projects, db.tasks, db.time_logs, async () => {
-    await db.projects.bulkPut((projects.data ?? []) as Project[]);
-    await db.tasks.bulkPut((tasks.data ?? []) as Task[]);
-    await db.time_logs.bulkPut((timeLogs.data ?? []) as TimeLog[]);
-  });
+  return rows;
 }

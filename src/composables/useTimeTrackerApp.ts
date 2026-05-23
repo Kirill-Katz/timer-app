@@ -1,20 +1,16 @@
 import { computed, onMounted, onUnmounted, proxyRefs, reactive, ref } from 'vue';
 import { supabase, getCurrentUserId, handleAuthRedirect } from '../services/supabase';
-import { ensureBootstrapData, startBackgroundSync, subscribeSyncState, type SyncState } from '../services/sync-queue';
+import { completedTimeLogDurationMs, durationBetweenMs, timeLogDurationMs } from './useTimeLogDuration';
+import { hasLogAggregates, rebuildLogAggregates } from '../services/log-aggregates';
+import { ensureBootstrapData, reloadFromRemote, startBackgroundSync, subscribeSyncState, type SyncState } from '../services/sync-queue';
 import { createProject, listProjects, setProjectArchived, updateProject } from '../stores/projects';
 import { createTask, listTasks, listTasksForProject, setTaskArchived, setTaskCompleted, updateTask } from '../stores/tasks';
-import { getRunningLog, listTimeLogs, softDeleteTimeLog, startTimer, stopTimer, sumProjectTimeLogDurations, sumTaskTimeLogDurations, updateTimeLog } from '../stores/time-logs';
-import type { Project, Task, TimeLog } from '../types';
-
-export interface DetailGroup {
-  day: string;
-  projectId: string;
-  taskId: string | null;
-}
+import { countTimeLogs, getRunningLog, listTimeLogs, listTimeLogsForGroup, listTimeLogsPage, softDeleteTimeLog, startTimer, stopTimer, sumProjectTimeLogDurations, sumTaskTimeLogDurations, updateTimeLog } from '../stores/time-logs';
+import type { DetailGroup, GroupedLogEntry, GroupedLogSection, Project, Task, TimeLog } from '../types';
 
 export function useTimeTrackerApp() {
-  const sortTasks = (taskList: Task[]) =>
-    [...taskList].sort((a, b) => Number(Boolean(a.completed)) - Number(Boolean(b.completed)) || a.created_at.localeCompare(b.created_at));
+  const MOBILE_TIMELINE_PAGE_SIZE = 50;
+  const sortTasks = (taskList: Task[]) => taskList.slice().sort(compareTasks);
 
   const userId = ref<string | null>(null);
   const email = ref('');
@@ -26,6 +22,8 @@ export function useTimeTrackerApp() {
   const logs = ref<TimeLog[]>([]);
   const projectDurationTotals = ref<Record<string, number>>({});
   const taskDurationTotals = ref<Record<string, number>>({});
+  const groupedLogs = ref<GroupedLogSection[]>([]);
+  const detailLogs = ref<TimeLog[]>([]);
   const selectedProjectId = ref('');
   const selectedTaskId = ref<string | null>(null);
   const includeArchived = ref(false);
@@ -45,6 +43,11 @@ export function useTimeTrackerApp() {
   const swipingProjectId = ref<string | null>(null);
   const swipeOffsetX = ref(0);
   const editPickerMode = ref<'project' | 'task' | null>(null);
+  const logOffset = ref(0);
+  const totalLogCount = ref(0);
+  const hasMoreLogs = ref(true);
+  const loadingMoreLogs = ref(false);
+  const timelineScrollTop = ref(0);
   const ticker = ref(Date.now());
   const syncState = reactive<SyncState>({
     online: navigator.onLine,
@@ -80,11 +83,17 @@ export function useTimeTrackerApp() {
   const logFormTasks = computed(() => sortTasks(allTasks.value.filter((task) => task.project_id === logForm.project_id && (includeArchived.value || !task.archived))));
   const visibleLogs = computed(() => logs.value.filter((log) => includeArchived.value || !projectById(log.project_id)?.archived));
   const canStartTimer = computed(() => Boolean(userId.value && selectedProjectId.value && !runningLog.value));
-  const groupedLogs = computed(() => {
-    const groups = new Map<string, { totalMs: number; entries: Map<string, { projectId: string; taskId: string | null; totalMs: number; latestStart: string }> }>();
-    visibleLogs.value.forEach((log) => {
+  const currentEditingLog = computed(() => editingLogId.value ? logs.value.find((log) => log.id === editingLogId.value) : undefined);
+
+  function compareTasks(a: Task, b: Task) {
+    return Number(Boolean(a.completed)) - Number(Boolean(b.completed)) || a.created_at.localeCompare(b.created_at);
+  }
+
+  function buildGroupedLogs(logList: TimeLog[]) {
+    const groups = new Map<string, { totalMs: number; entries: Map<string, GroupedLogEntry> }>();
+    logList.forEach((log) => {
       const label = dayLabel(log.start_time);
-      const group = groups.get(label) ?? { totalMs: 0, entries: new Map<string, { projectId: string; taskId: string | null; totalMs: number; latestStart: string }>() };
+      const group = groups.get(label) ?? { totalMs: 0, entries: new Map<string, GroupedLogEntry>() };
       const duration = logDurationMs(log);
       const key = `${log.project_id}:${log.task_id ?? 'none'}`;
       const entry = group.entries.get(key) ?? {
@@ -102,19 +111,147 @@ export function useTimeTrackerApp() {
       group.entries.set(key, entry);
       groups.set(label, group);
     });
-    return [...groups.entries()].map(([label, group]) => ({
+
+    return Array.from(groups.entries(), ([label, group]) => ({
       label,
       totalMs: group.totalMs,
-      entries: [...group.entries.values()].sort((a, b) => new Date(b.latestStart).getTime() - new Date(a.latestStart).getTime())
+      entries: Array.from(group.entries.values()).sort((a, b) => new Date(b.latestStart).getTime() - new Date(a.latestStart).getTime())
     }));
-  });
-  const detailLogs = computed(() => {
-    if (!detailGroup.value) return [];
+  }
 
-    return visibleLogs.value
-      .filter((log) => dayKey(log.start_time) === detailGroup.value?.day && log.project_id === detailGroup.value.projectId && log.task_id === detailGroup.value.taskId)
-      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-  });
+  function updateProjectDurationTotal(projectId: string, deltaMs: number) {
+    if (!deltaMs) return;
+    const nextTotal = Math.max(0, (projectDurationTotals.value[projectId] ?? 0) + deltaMs);
+    if (nextTotal) {
+      projectDurationTotals.value = {
+        ...projectDurationTotals.value,
+        [projectId]: nextTotal
+      };
+      return;
+    }
+
+    const { [projectId]: _removed, ...rest } = projectDurationTotals.value;
+    projectDurationTotals.value = rest;
+  }
+
+  function updateTaskDurationTotal(taskId: string | null, deltaMs: number) {
+    if (!taskId || !deltaMs) return;
+    const nextTotal = Math.max(0, (taskDurationTotals.value[taskId] ?? 0) + deltaMs);
+    if (nextTotal) {
+      taskDurationTotals.value = {
+        ...taskDurationTotals.value,
+        [taskId]: nextTotal
+      };
+      return;
+    }
+
+    const { [taskId]: _removed, ...rest } = taskDurationTotals.value;
+    taskDurationTotals.value = rest;
+  }
+
+  function applyLogDurationMutation(previous: TimeLog | null | undefined, next: TimeLog | null | undefined) {
+    const previousDuration = completedTimeLogDurationMs(previous);
+    const nextDuration = completedTimeLogDurationMs(next);
+
+    if (previous) {
+      updateProjectDurationTotal(previous.project_id, -previousDuration);
+      updateTaskDurationTotal(previous.task_id, -previousDuration);
+    }
+
+    if (next) {
+      updateProjectDurationTotal(next.project_id, nextDuration);
+      updateTaskDurationTotal(next.task_id, nextDuration);
+    }
+  }
+
+  function sortLogsDesc(logList: TimeLog[]) {
+    return logList.slice().sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+  }
+
+  function rebuildDerivedLogState() {
+    groupedLogs.value = buildGroupedLogs(visibleLogs.value);
+  }
+
+  function applyLogStateMutation(previous: TimeLog | null | undefined, next: TimeLog | null | undefined) {
+    const previousCounted = Boolean(previous && !previous.deleted_at);
+    const nextCounted = Boolean(next && !next.deleted_at);
+    if (!previousCounted && nextCounted) {
+      totalLogCount.value += 1;
+    } else if (previousCounted && !nextCounted) {
+      totalLogCount.value = Math.max(0, totalLogCount.value - 1);
+    }
+
+    const nextLogs = logs.value.filter((log) => log.id !== previous?.id && log.id !== next?.id);
+    if (next && !next.deleted_at) {
+      nextLogs.push(next);
+    }
+    logs.value = sortLogsDesc(nextLogs);
+
+    applyLogDurationMutation(previous, next);
+
+    if (next && !next.deleted_at && !next.end_time) {
+      runningLog.value = next;
+    } else if (previous?.id && runningLog.value?.id === previous.id) {
+      runningLog.value = next && !next.deleted_at && !next.end_time ? next : undefined;
+    }
+
+    rebuildDerivedLogState();
+
+    if (detailGroup.value) {
+      const matchesDetail = (log: TimeLog | null | undefined) => {
+        if (!log) return false;
+        return dayKey(log.start_time) === detailGroup.value?.day
+          && log.project_id === detailGroup.value?.projectId
+          && log.task_id === detailGroup.value?.taskId;
+      };
+
+      const nextDetailLogs = detailLogs.value.filter((log) => log.id !== previous?.id && log.id !== next?.id);
+      if (next && !next.deleted_at && matchesDetail(next)) {
+        nextDetailLogs.push(next);
+      }
+      detailLogs.value = nextDetailLogs.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+    }
+  }
+
+  async function loadInitialLogs() {
+    if (!userId.value) return;
+
+    logOffset.value = 0;
+    hasMoreLogs.value = true;
+    loadingMoreLogs.value = false;
+
+    const page = await listTimeLogsPage(userId.value, 0, MOBILE_TIMELINE_PAGE_SIZE);
+    logs.value = page;
+    logOffset.value = page.length;
+    hasMoreLogs.value = logOffset.value < totalLogCount.value;
+    rebuildDerivedLogState();
+  }
+
+  async function loadMoreLogs() {
+    if (!userId.value || loadingMoreLogs.value || !hasMoreLogs.value) return;
+
+    loadingMoreLogs.value = true;
+    try {
+      const page = await listTimeLogsPage(userId.value, logOffset.value, MOBILE_TIMELINE_PAGE_SIZE);
+      if (!page.length) {
+        hasMoreLogs.value = false;
+        return;
+      }
+
+      const nextLogs = logs.value.slice();
+      nextLogs.push(...page);
+      logs.value = sortLogsDesc(nextLogs);
+      logOffset.value += page.length;
+      hasMoreLogs.value = logOffset.value < totalLogCount.value;
+      rebuildDerivedLogState();
+    } finally {
+      loadingMoreLogs.value = false;
+    }
+  }
+
+  function setTimelineScrollTop(nextScrollTop: number) {
+    timelineScrollTop.value = Math.max(0, nextScrollTop);
+  }
 
   onMounted(async () => {
     unsubscribeSync = subscribeSyncState((state) => {
@@ -193,9 +330,15 @@ export function useTimeTrackerApp() {
     logs.value = [];
     projectDurationTotals.value = {};
     taskDurationTotals.value = {};
+    groupedLogs.value = [];
+    detailLogs.value = [];
     runningLog.value = undefined;
     selectedProjectId.value = '';
     selectedTaskId.value = null;
+    logOffset.value = 0;
+    totalLogCount.value = 0;
+    hasMoreLogs.value = true;
+    loadingMoreLogs.value = false;
     syncState.pendingCount = 0;
     closeSheets();
   }
@@ -235,6 +378,18 @@ export function useTimeTrackerApp() {
     leaveUserScope();
   }
 
+  async function synchronizeFromRemote() {
+    if (!userId.value) return;
+
+    try {
+      await reloadFromRemote(userId.value);
+      syncState.lastError = null;
+      await refreshLocalData();
+    } catch (error) {
+      syncState.lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
   async function refreshLocalData() {
     if (!userId.value) return;
 
@@ -249,7 +404,12 @@ export function useTimeTrackerApp() {
       selectedTaskId.value = null;
     }
 
-    logs.value = await listTimeLogs(userId.value);
+    totalLogCount.value = await countTimeLogs(userId.value);
+    const allLogs = await listTimeLogs(userId.value);
+    if (allLogs.length && !(await hasLogAggregates(userId.value))) {
+      await rebuildLogAggregates(userId.value);
+    }
+    await loadInitialLogs();
     projectDurationTotals.value = await sumProjectTimeLogDurations(userId.value);
     taskDurationTotals.value = await sumTaskTimeLogDurations(userId.value);
     runningLog.value = await getRunningLog(userId.value);
@@ -319,26 +479,29 @@ export function useTimeTrackerApp() {
 
   async function beginTimer() {
     if (!userId.value || !canStartTimer.value) return;
-    await startTimer(userId.value, selectedProjectId.value, selectedTaskId.value);
-    await refreshLocalData();
+    const log = await startTimer(userId.value, selectedProjectId.value, selectedTaskId.value);
+    applyLogStateMutation(null, log);
   }
 
   async function switchTimer(projectId: string, taskId: string | null = null) {
     if (!userId.value) return;
+    let stoppedLog: TimeLog | undefined;
     if (runningLog.value) {
-      await stopTimer(userId.value, runningLog.value);
+      stoppedLog = await stopTimer(userId.value, runningLog.value);
+      applyLogStateMutation(runningLog.value, stoppedLog);
     }
     selectedProjectId.value = projectId;
     selectedTaskId.value = taskId;
-    await startTimer(userId.value, projectId, taskId);
+    const startedLog = await startTimer(userId.value, projectId, taskId);
+    applyLogStateMutation(null, startedLog);
     closeSheets();
-    await refreshLocalData();
   }
 
   async function endTimer() {
     if (!userId.value || !runningLog.value) return;
-    await stopTimer(userId.value, runningLog.value);
-    await refreshLocalData();
+    const currentRunningLog = runningLog.value;
+    const stoppedLog = await stopTimer(userId.value, currentRunningLog);
+    applyLogStateMutation(currentRunningLog, stoppedLog);
   }
 
   async function saveLog() {
@@ -354,18 +517,22 @@ export function useTimeTrackerApp() {
     const existing = logs.value.find((log) => log.id === editingLogId.value);
     if (!existing) return;
 
-    await updateTimeLog(userId.value, existing, payload);
+    const updated = await updateTimeLog(userId.value, existing, payload);
+    applyLogStateMutation(existing, updated);
     closeLogEditor();
-    await refreshLocalData();
   }
 
   async function deleteLog(log: TimeLog) {
     if (!userId.value) return;
     await softDeleteTimeLog(userId.value, log);
+    const deleted = {
+      ...log,
+      deleted_at: new Date().toISOString()
+    };
+    applyLogStateMutation(log, deleted);
     if (editingLogId.value === log.id) {
       closeLogEditor();
     }
-    await refreshLocalData();
   }
 
   function openLogEditor(log: TimeLog) {
@@ -378,7 +545,6 @@ export function useTimeTrackerApp() {
     logForm.date = toDateLocal(log.start_time);
     logForm.start_time = toTimeLocal(log.start_time);
     logForm.end_time = log.end_time ? toTimeLocal(log.end_time) : '';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function closeLogEditor() {
@@ -394,25 +560,27 @@ export function useTimeTrackerApp() {
     }
   }
 
-  function openLogDetail(day: string, projectId: string, taskId: string | null) {
+  async function openLogDetail(day: string, projectId: string, taskId: string | null) {
     closeLogEditor();
     settingsOpen.value = false;
     closeSheets();
     detailGroup.value = { day, projectId, taskId };
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (userId.value) {
+      detailLogs.value = await listTimeLogsForGroup(userId.value, day, projectId, taskId);
+    }
   }
 
   function closeLogDetail() {
     detailGroup.value = null;
+    detailLogs.value = [];
   }
 
   function openSettings() {
+    previousMobileScreen.value = detailGroup.value ? 'detail' : 'main';
     closeLogEditor();
     closeLogDetail();
     closeSheets();
-    previousMobileScreen.value = detailGroup.value ? 'detail' : 'main';
     settingsOpen.value = true;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function closeSettings() {
@@ -458,6 +626,7 @@ export function useTimeTrackerApp() {
     closeLogDetail();
     closeSheets();
     settingsOpen.value = false;
+    timelineScrollTop.value = 0;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -544,7 +713,7 @@ export function useTimeTrackerApp() {
   }
 
   function formatDuration(start: string, end: string | null) {
-    return formatDurationMs(Math.max(0, (end ? new Date(end).getTime() : ticker.value) - new Date(start).getTime()));
+    return formatDurationMs(durationBetweenMs(start, end ? new Date(end).getTime() : ticker.value));
   }
 
   function formatDurationMs(ms: number) {
@@ -556,8 +725,7 @@ export function useTimeTrackerApp() {
   }
 
   function logDurationMs(log: TimeLog) {
-    const endMs = log.end_time ? new Date(log.end_time).getTime() : ticker.value;
-    return Math.max(0, endMs - new Date(log.start_time).getTime());
+    return timeLogDurationMs(log, ticker.value);
   }
 
   function taskTotalDurationMs(taskId: string) {
@@ -662,11 +830,18 @@ export function useTimeTrackerApp() {
     logFormTasks,
     visibleLogs,
     canStartTimer,
+    currentEditingLog,
     groupedLogs,
     detailLogs,
+    hasMoreLogs,
+    loadingMoreLogs,
+    timelineScrollTop,
     signIn,
     signOut,
+    synchronizeFromRemote,
     refreshLocalData,
+    loadMoreLogs,
+    setTimelineScrollTop,
     addProject,
     addMobileProject,
     saveSelectedProject,

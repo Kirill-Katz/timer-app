@@ -35,11 +35,23 @@
 
 @layer components {
   .btn-primary {
-    @apply border border-white/10 bg-white/10 text-ink shadow-soft backdrop-blur;
+    @apply border border-white/10 bg-white/10 text-ink shadow-soft backdrop-blur transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-secondary {
+    @apply border border-white/10 bg-black/20 text-ink shadow-soft backdrop-blur transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-danger {
+    @apply border border-red-900/35 bg-red-800 text-white shadow-soft transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-icon {
+    @apply inline-flex items-center justify-center rounded-xl;
   }
 
   .glass-start {
-    @apply border border-white/20 bg-gradient-to-b from-white/20 to-white/5 text-ink shadow-soft backdrop-blur-md;
+    @apply border border-white/20 bg-gradient-to-b from-white/20 to-white/5 text-ink shadow-soft backdrop-blur-md transition active:scale-[0.99];
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.22),
       0 18px 40px rgba(86, 227, 171, 0.12);

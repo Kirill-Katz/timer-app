@@ -125,7 +125,7 @@ defineProps<{
             <button class="btn-primary inline-flex min-h-12 items-center justify-center gap-2 rounded-lg px-4 font-black" type="submit">
               <Check :size="18" /> Save changes
             </button>
-            <button v-if="app.logs.find((log) => log.id === app.editingLogId)" class="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-red-700 px-4 font-black text-white" type="button" @click="app.deleteLog(app.logs.find((log) => log.id === app.editingLogId)!)">
+            <button v-if="app.currentEditingLog" class="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-red-700 px-4 font-black text-white" type="button" @click="app.deleteLog(app.currentEditingLog)">
               <Trash2 :size="18" /> Delete
             </button>
           </div>
