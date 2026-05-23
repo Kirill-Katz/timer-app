@@ -211,9 +211,9 @@ watch(() => props.app.projectLogDetailProjectId, (projectId) => {
             </VirtualScroller>
           </div>
           <div v-else-if="app.projectCreateOpen" class="grid gap-3">
-            <div class="relative flex min-h-10 items-center justify-center">
-              <MobileBackButton class="absolute left-0" @click="app.projectCreateOpen = false" />
-              <h2 class="text-2xl font-medium">New project</h2>
+            <div class="flex min-h-10 items-center gap-2">
+              <MobileBackButton class="shrink-0" compact aria-label="Back" @click="app.projectCreateOpen = false" />
+              <h2 class="truncate text-2xl font-medium">New project</h2>
             </div>
             <form class="grid gap-2" @submit.prevent="app.addMobileProject">
               <input v-model="app.projectForm.name" class="min-h-12 rounded-lg border border-line bg-panel px-3 text-ink placeholder:text-stone-500" placeholder="Project name" />
@@ -254,7 +254,7 @@ watch(() => props.app.projectLogDetailProjectId, (projectId) => {
           </div>
     </MobileBottomSheet>
 
-    <MobileOverlay :show="app.settingsOpen">
+    <MobileOverlay :show="app.settingsOpen" content-class="px-4 py-5">
         <MobileCenteredHeader class="mb-4" title="Settings" @back="app.closeSettings" />
         <div class="grid gap-3">
           <MobileSettingsCard label="Connection">
@@ -311,8 +311,8 @@ watch(() => props.app.projectLogDetailProjectId, (projectId) => {
     <MobileOverlay :show="Boolean(app.projectLogDetailProjectId)" content-class="px-4 py-5" @scroll.passive="handleProjectLogScroll">
         <div v-if="app.projectLogDetailProject" class="relative mb-4 grid min-h-10 justify-items-center gap-1">
           <MobileBackButton class="absolute left-0" @click="app.closeProjectLogDetail" />
-          <div class="mx-14 inline-flex max-w-[calc(100vw-7rem)] items-center justify-center gap-2">
-            <label class="relative h-3 w-3 overflow-hidden rounded-full border border-black/10" :style="{ backgroundColor: app.projectLogDetailProject.color }" aria-label="Project color">
+          <div class="mx-12 inline-flex max-w-[calc(100vw-6rem)] items-center justify-center gap-2">
+            <label class="relative h-3 w-3 shrink-0 overflow-hidden rounded-full border border-black/10" :style="{ backgroundColor: app.projectLogDetailProject.color }" aria-label="Project color">
               <input
                 v-model="app.projectLogDetailProject.color"
                 class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
@@ -325,12 +325,12 @@ watch(() => props.app.projectLogDetailProjectId, (projectId) => {
               v-if="editingProjectName"
               ref="projectNameInput"
               v-model="app.projectLogDetailProject.name"
-              class="min-w-0 w-auto max-w-full bg-transparent text-center text-xl font-medium text-ink outline-none"
+              class="min-w-0 flex-1 bg-transparent text-center text-xl font-medium text-ink outline-none"
               aria-label="Project name"
               @blur="saveProjectLogDetailProject"
               @keydown.enter.prevent="saveProjectLogDetailProject"
             />
-            <button v-else class="min-w-0 max-w-full truncate text-center text-xl font-medium" type="button" @click="startEditingProjectName">
+            <button v-else class="inline-block min-w-0 max-w-full flex-none truncate text-center text-xl font-medium" type="button" @click="startEditingProjectName">
               {{ app.projectLogDetailProject.name }}
             </button>
           </div>
