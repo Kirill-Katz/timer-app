@@ -25,6 +25,15 @@ export async function handleAuthRedirect(): Promise<void> {
 }
 
 export async function getCurrentUserId(): Promise<string | null> {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionData.session?.user.id) {
+    return sessionData.session.user.id;
+  }
+
+  if (sessionError) {
+    console.warn('Unable to get Supabase session', sessionError);
+  }
+
   const { data, error } = await supabase.auth.getUser();
   if (error) {
     console.warn('Unable to get Supabase user', error);
