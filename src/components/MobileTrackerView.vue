@@ -26,6 +26,8 @@ const props = defineProps<{
 }>();
 
 const lastTimelineScrollTop = ref(0);
+const editingProjectName = ref(false);
+const projectNameInput = ref<HTMLInputElement | null>(null);
 
 async function restoreTimelineScrollPosition() {
   await nextTick();
@@ -59,6 +61,19 @@ function handleProjectLogScroll(event: Event) {
   }
 }
 
+async function startEditingProjectName() {
+  editingProjectName.value = true;
+  await nextTick();
+  projectNameInput.value?.focus();
+  projectNameInput.value?.select();
+}
+
+async function saveProjectLogDetailProject() {
+  if (!props.app.projectLogDetailProject) return;
+  editingProjectName.value = false;
+  await props.app.saveProject(props.app.projectLogDetailProject);
+}
+
 onMounted(() => {
   window.addEventListener('scroll', handleWindowScroll, { passive: true });
 });
@@ -77,11 +92,17 @@ watch(
   },
   { flush: 'post' }
 );
+
+watch(() => props.app.projectLogDetailProjectId, (projectId) => {
+  if (!projectId) {
+    editingProjectName.value = false;
+  }
+});
 </script>
 
 <template>
   <section class="relative sm:hidden">
-    <section class="flex min-h-[calc(100vh-7rem)] flex-col gap-6 px-3 py-4">
+    <section class="flex min-h-[calc(100vh-7rem)] flex-col gap-6 py-4">
       <div v-if="app.runningLog" class="rounded-lg border border-sage/30 bg-sage/10 p-3">
         <div class="flex items-center justify-between gap-3">
           <button class="min-w-0 flex-1 text-left" type="button" @click="app.openLogEditor(app.runningLog)">
@@ -292,13 +313,32 @@ watch(
     </MobileOverlay>
 
     <MobileOverlay :show="Boolean(app.projectLogDetailProjectId)" content-class="px-4 py-5" @scroll.passive="handleProjectLogScroll">
-        <MobileCenteredHeader
-          v-if="app.projectLogDetailProject"
-          class="mb-4"
-          :title="app.projectLogDetailProject.name"
-          :color="app.projectLogDetailProject.color"
-          @back="app.closeProjectLogDetail"
-        />
+        <div v-if="app.projectLogDetailProject" class="relative mb-4 grid min-h-10 justify-items-center gap-1">
+          <MobileBackButton class="absolute left-0" @click="app.closeProjectLogDetail" />
+          <div class="mx-14 grid w-[min(18rem,calc(100vw-7rem))] grid-cols-[0.75rem_minmax(0,1fr)] items-center gap-2">
+            <label class="relative h-3 w-3 overflow-hidden rounded-full border border-black/10" :style="{ backgroundColor: app.projectLogDetailProject.color }" aria-label="Project color">
+              <input
+                v-model="app.projectLogDetailProject.color"
+                class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                type="color"
+                aria-label="Project color"
+                @change="app.saveProject(app.projectLogDetailProject)"
+              />
+            </label>
+            <input
+              v-if="editingProjectName"
+              ref="projectNameInput"
+              v-model="app.projectLogDetailProject.name"
+              class="w-full min-w-0 bg-transparent text-center text-xl font-black text-ink outline-none"
+              aria-label="Project name"
+              @blur="saveProjectLogDetailProject"
+              @keydown.enter.prevent="saveProjectLogDetailProject"
+            />
+            <button v-else class="w-full min-w-0 truncate text-center text-xl font-black" type="button" @click="startEditingProjectName">
+              {{ app.projectLogDetailProject.name }}
+            </button>
+          </div>
+        </div>
         <div class="grid gap-2">
           <article v-for="log in app.projectLogDetailLogs" :key="log.id" class="grid cursor-pointer grid-cols-1 border-b border-line px-1 py-2" @click="app.openLogEditor(log)">
             <div class="min-w-0">

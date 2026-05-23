@@ -496,10 +496,15 @@ export function useTimeTrackerApp() {
   }
 
   async function saveSelectedProject() {
-    if (!userId.value || !selectedProject.value) return;
-    await updateProject(userId.value, selectedProject.value, {
-      name: selectedProject.value.name.trim(),
-      color: selectedProject.value.color
+    if (!selectedProject.value) return;
+    await saveProject(selectedProject.value);
+  }
+
+  async function saveProject(project: Project) {
+    if (!userId.value || !project.name.trim()) return;
+    await updateProject(userId.value, project, {
+      name: project.name.trim(),
+      color: project.color
     });
     await refreshLocalData();
   }
@@ -939,6 +944,7 @@ export function useTimeTrackerApp() {
     addProject,
     addMobileProject,
     saveSelectedProject,
+    saveProject,
     toggleProjectArchive,
     addTask,
     addMobileTask,
