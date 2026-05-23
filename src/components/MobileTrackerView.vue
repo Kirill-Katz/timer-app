@@ -83,10 +83,10 @@ onUnmounted(() => {
 });
 
 watch(
-  () => [props.app.settingsOpen, props.app.editingLogId, props.app.detailGroup?.day ?? null],
-  async ([settingsOpen, editingLogId, detailDay], [previousSettingsOpen, previousEditingLogId, previousDetailDay]) => {
-    const isMainTimeline = !settingsOpen && !editingLogId && !detailDay;
-    const wasMainTimeline = !previousSettingsOpen && !previousEditingLogId && !previousDetailDay;
+  () => [props.app.reportsOpen, props.app.settingsOpen, props.app.editingLogId, props.app.detailGroup?.day ?? null],
+  async ([reportsOpen, settingsOpen, editingLogId, detailDay], [previousReportsOpen, previousSettingsOpen, previousEditingLogId, previousDetailDay]) => {
+    const isMainTimeline = !reportsOpen && !settingsOpen && !editingLogId && !detailDay;
+    const wasMainTimeline = !previousReportsOpen && !previousSettingsOpen && !previousEditingLogId && !previousDetailDay;
     if (!isMainTimeline || wasMainTimeline) return;
     await restoreTimelineScrollPosition();
   },
@@ -145,26 +145,34 @@ watch(() => props.app.projectLogDetailProjectId, (projectId) => {
       </div>
     </section>
 
-    <nav v-if="!app.editingLogId && !app.detailGroup && !app.projectLogDetailProjectId && !app.settingsOpen" class="fixed inset-x-3 bottom-3 z-40 grid grid-cols-[3.5rem_1fr_3.5rem] items-center gap-2 rounded-2xl border border-line bg-panel/95 p-2 shadow-soft backdrop-blur">
-      <button class="btn-primary btn-icon inline-flex min-h-12 items-center justify-center" type="button" title="Menu" @click="app.openMenuSheet">
-        <Menu :size="22" />
-      </button>
-      <button class="btn-primary inline-flex min-h-12 items-center justify-center rounded-xl px-4 font-normal" type="button" @click="app.openProjectsSheet">
-        Projects
-      </button>
-      <button class="min-h-12 rounded-xl bg-transparent" type="button" aria-hidden="true" tabindex="-1"></button>
+    <nav v-if="!app.editingLogId && !app.detailGroup && !app.projectLogDetailProjectId" class="fixed inset-x-0 bottom-0 z-[70] bg-panel/95 px-3 py-2 shadow-soft backdrop-blur">
+      <div v-if="app.reportsOpen || app.settingsOpen" class="flex">
+        <button class="inline-flex min-h-12 w-12 items-center justify-center rounded-xl border-0 bg-transparent text-ink" type="button" title="Menu" @click="app.openMenuSheet">
+          <Menu :size="22" />
+        </button>
+      </div>
+      <div v-else class="grid grid-cols-[3.5rem_1fr_3.5rem] items-center gap-2">
+        <button class="inline-flex min-h-12 items-center justify-center rounded-xl border-0 bg-transparent text-ink" type="button" title="Menu" @click="app.openMenuSheet">
+          <Menu :size="22" />
+        </button>
+        <button class="btn-primary inline-flex min-h-12 items-center justify-center rounded-xl px-4 font-normal" type="button" @click="app.openProjectsSheet">
+          Projects
+        </button>
+        <button class="min-h-12 rounded-xl bg-transparent" type="button" aria-hidden="true" tabindex="-1"></button>
+      </div>
     </nav>
 
-    <MobileBottomSheet :show="app.menuSheetOpen" @close="app.closeSheets">
+    <MobileBottomSheet :show="app.menuSheetOpen" z-class="z-[80]" @close="app.closeSheets">
       <div class="grid gap-2">
-        <button class="btn-primary inline-flex min-h-12 items-center justify-start rounded-xl px-4 text-left font-normal" type="button">Reports</button>
+        <button class="btn-primary inline-flex min-h-12 items-center justify-start rounded-xl px-4 text-left font-normal" type="button" @click="app.closeSheets(); app.openTimeline()">Timeline</button>
+        <button class="btn-primary inline-flex min-h-12 items-center justify-start rounded-xl px-4 text-left font-normal" type="button" @click="app.closeSheets(); app.openReports()">Reports</button>
         <button class="btn-primary inline-flex min-h-12 items-center justify-start rounded-xl px-4 text-left font-normal" type="button">Timers</button>
         <button class="btn-primary inline-flex min-h-12 items-center justify-start rounded-xl px-4 text-left font-normal" type="button">Calendar</button>
         <button class="btn-primary inline-flex min-h-12 items-center justify-start rounded-xl px-4 text-left font-normal" type="button" @click="app.closeSheets(); app.openSettings()">Settings</button>
       </div>
     </MobileBottomSheet>
 
-    <MobileBottomSheet :show="app.projectsSheetOpen" min-height-class="min-h-[62vh]" @close="app.closeSheets">
+    <MobileBottomSheet :show="app.projectsSheetOpen" z-class="z-[80]" min-height-class="min-h-[62vh]" @close="app.closeSheets">
           <div v-if="app.taskSheetProjectId" class="flex min-h-0 flex-1 flex-col gap-3">
             <div class="relative flex min-h-10 items-center justify-center">
               <MobileBackButton class="absolute left-0" aria-label="Back to projects" @click="app.taskSheetProjectId = null; app.taskCreateOpen = false" />
@@ -254,8 +262,16 @@ watch(() => props.app.projectLogDetailProjectId, (projectId) => {
           </div>
     </MobileBottomSheet>
 
-    <MobileOverlay :show="app.settingsOpen" content-class="px-4 py-5">
-        <MobileCenteredHeader class="mb-4" title="Settings" @back="app.closeSettings" />
+    <MobileOverlay :show="app.reportsOpen" content-class="px-4 py-5 pb-24">
+        <div class="mb-4">
+          <h2 class="text-center text-xl font-medium">Reports</h2>
+        </div>
+    </MobileOverlay>
+
+    <MobileOverlay :show="app.settingsOpen" content-class="px-4 py-5 pb-24">
+        <div class="mb-4">
+          <h2 class="text-center text-xl font-medium">Settings</h2>
+        </div>
         <div class="grid gap-3">
           <MobileSettingsCard label="Connection">
             <template #value>

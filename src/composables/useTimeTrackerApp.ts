@@ -32,7 +32,8 @@ export function useTimeTrackerApp() {
   const runningLog = ref<TimeLog | undefined>();
   const editingLogId = ref<string | null>(null);
   const detailGroup = ref<DetailGroup | null>(null);
-  const previousMobileScreen = ref<'main' | 'detail' | 'settings'>('main');
+  const previousMobileScreen = ref<'main' | 'detail' | 'settings' | 'reports'>('main');
+  const reportsOpen = ref(false);
   const settingsOpen = ref(false);
   const menuSheetOpen = ref(false);
   const projectsSheetOpen = ref(false);
@@ -607,7 +608,8 @@ export function useTimeTrackerApp() {
   }
 
   function openLogEditor(log: TimeLog) {
-    previousMobileScreen.value = detailGroup.value ? 'detail' : settingsOpen.value ? 'settings' : 'main';
+    previousMobileScreen.value = detailGroup.value ? 'detail' : settingsOpen.value ? 'settings' : reportsOpen.value ? 'reports' : 'main';
+    reportsOpen.value = false;
     settingsOpen.value = false;
     closeSheets();
     editingLogId.value = log.id;
@@ -634,6 +636,7 @@ export function useTimeTrackerApp() {
   async function openLogDetail(day: string, projectId: string, taskId: string | null) {
     closeLogEditor();
     closeProjectLogDetail();
+    reportsOpen.value = false;
     settingsOpen.value = false;
     closeSheets();
     detailGroup.value = { day, projectId, taskId };
@@ -650,6 +653,7 @@ export function useTimeTrackerApp() {
   async function openProjectLogDetail(projectId: string) {
     closeLogEditor();
     closeLogDetail();
+    reportsOpen.value = false;
     settingsOpen.value = false;
     closeSheets();
     projectLogDetailProjectId.value = projectId;
@@ -666,12 +670,27 @@ export function useTimeTrackerApp() {
     loadingMoreProjectLogs.value = false;
   }
 
+  function openReports() {
+    previousMobileScreen.value = detailGroup.value ? 'detail' : 'main';
+    closeLogEditor();
+    closeLogDetail();
+    closeProjectLogDetail();
+    closeSheets();
+    settingsOpen.value = false;
+    reportsOpen.value = true;
+  }
+
+  function closeReports() {
+    reportsOpen.value = false;
+  }
+
   function openSettings() {
     previousMobileScreen.value = detailGroup.value ? 'detail' : 'main';
     closeLogEditor();
     closeLogDetail();
     closeProjectLogDetail();
     closeSheets();
+    reportsOpen.value = false;
     settingsOpen.value = true;
   }
 
@@ -718,6 +737,7 @@ export function useTimeTrackerApp() {
     closeLogDetail();
     closeProjectLogDetail();
     closeSheets();
+    reportsOpen.value = false;
     settingsOpen.value = false;
     timelineScrollTop.value = 0;
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -904,6 +924,7 @@ export function useTimeTrackerApp() {
     editingLogId,
     detailGroup,
     projectLogDetailProjectId,
+    reportsOpen,
     settingsOpen,
     menuSheetOpen,
     projectsSheetOpen,
@@ -962,6 +983,8 @@ export function useTimeTrackerApp() {
     closeLogDetail,
     openProjectLogDetail,
     closeProjectLogDetail,
+    openReports,
+    closeReports,
     openSettings,
     closeSettings,
     goBackFromEditor,

@@ -8,7 +8,8 @@ defineProps<{
 </script>
 
 <template>
-  <header class="mx-auto mb-3 hidden max-w-7xl justify-end sm:flex">
+  <header class="mx-auto mb-3 hidden max-w-7xl justify-end gap-2 sm:flex">
+    <button class="btn-primary inline-flex min-h-11 items-center justify-center rounded-lg px-4" type="button" @click="app.openReports">Reports</button>
     <button class="btn-primary inline-flex min-h-11 w-11 items-center justify-center rounded-lg" type="button" title="Settings" @click="app.openSettings">
       <Settings :size="20" />
     </button>
@@ -39,7 +40,20 @@ defineProps<{
       </div>
     </aside>
 
-    <section v-if="app.settingsOpen" class="grid gap-4">
+    <section v-if="app.reportsOpen" class="grid gap-4">
+      <section class="min-h-[calc(100vh-8rem)] rounded-lg border border-line bg-panel p-4 shadow-soft">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <button class="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-transparent px-3 font-normal text-ink" type="button" @click="app.closeReports">
+            <ArrowLeft :size="18" /> Back
+          </button>
+        </div>
+        <div class="mb-5">
+          <h2 class="text-3xl font-medium leading-none">Reports</h2>
+        </div>
+      </section>
+    </section>
+
+    <section v-else-if="app.settingsOpen" class="grid gap-4">
       <section class="min-h-[calc(100vh-8rem)] rounded-lg border border-line bg-panel p-4 shadow-soft">
         <div class="mb-4 flex items-center justify-between gap-3">
           <button class="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-transparent px-3 font-normal text-ink" type="button" @click="app.closeSettings">
