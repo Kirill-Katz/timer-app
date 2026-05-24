@@ -19,9 +19,9 @@ defineProps<{
           class="project-swipe-row relative h-full overflow-hidden rounded-lg bg-sage/15"
           :data-project-id="project.id"
           @touchstart.passive="app.handleProjectSwipeStart"
-          @touchmove.passive="app.handleProjectSwipeMove($event, project.id)"
+          @touchmove="app.handleProjectSwipeMove($event, project.id)"
           @touchend="app.handleProjectSwipeEnd($event, project.id)"
-          @touchcancel="app.handleProjectSwipeEnd($event, project.id)"
+          @touchcancel="app.handleProjectSwipeCancel"
         >
           <div class="absolute inset-y-0 right-0 flex w-32 items-center justify-center bg-sage/30 text-sm font-normal text-ink">
             Tasks
