@@ -12,7 +12,7 @@ defineProps<{
 <template>
   <div class="flex min-h-0 flex-1 flex-col gap-3">
     <div class="relative flex min-h-10 items-center justify-center">
-      <MobileBackButton class="absolute left-0" aria-label="Back to projects" @click="app.taskSheetProjectId = null; app.taskCreateOpen = false" />
+      <MobileBackButton class="absolute left-0" aria-label="Back to projects" @click="app.closeProjectTasks" />
       <div class="mx-14 flex min-w-0 items-center justify-center gap-2">
         <span class="h-3 w-3 flex-none rounded-full border border-black/10" :style="{ backgroundColor: app.taskSheetProject?.color ?? '#777' }"></span>
         <h2 class="truncate text-center text-xl font-medium">{{ app.taskSheetProject?.name ?? 'Tasks' }}</h2>
@@ -21,7 +21,7 @@ defineProps<{
     <div v-if="app.taskCreateOpen" class="grid shrink-0 gap-2">
       <input v-model="app.mobileTaskName" class="min-h-12 rounded-lg border border-line bg-panel px-3 text-ink placeholder:text-stone-500" placeholder="Task name" />
       <div class="grid grid-cols-2 gap-2">
-        <button class="btn-secondary inline-flex min-h-11 items-center justify-center rounded-xl px-4 font-normal" type="button" @click="app.taskCreateOpen = false; app.mobileTaskName = ''">
+        <button class="btn-secondary inline-flex min-h-11 items-center justify-center rounded-xl px-4 font-normal" type="button" @click="app.closeTaskCreate">
           Cancel
         </button>
         <button class="btn-primary inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 font-medium" type="button" @click="app.addMobileTask">
@@ -29,7 +29,7 @@ defineProps<{
         </button>
       </div>
     </div>
-    <button v-else class="btn-primary inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-4 font-medium" type="button" @click="app.taskCreateOpen = true">
+    <button v-else class="btn-primary inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-4 font-medium" type="button" @click="app.openTaskCreate()">
       <Plus :size="18" /> Add a new task
     </button>
     <VirtualScroller class="max-h-[40vh] pb-8" :items="app.taskSheetTasks" :item-height="64" item-key="id" :overscan="8">

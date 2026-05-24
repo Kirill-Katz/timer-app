@@ -68,15 +68,15 @@ watch(
 
     <nav v-if="!app.editingLogId && !app.detailGroup && !app.projectLogDetailProjectId" class="fixed inset-x-0 bottom-0 z-[70] bg-panel/95 px-3 py-2 shadow-soft backdrop-blur">
       <div v-if="app.reportsOpen || app.settingsOpen || app.calendarOpen" class="flex">
-        <button class="inline-flex min-h-12 w-12 items-center justify-center rounded-xl border-0 bg-transparent text-ink" type="button" title="Menu" @click="app.openMenuSheet">
+        <button class="inline-flex min-h-12 w-12 items-center justify-center rounded-xl border-0 bg-transparent text-ink" type="button" title="Menu" @click="app.openMenuSheet()">
           <Menu :size="22" />
         </button>
       </div>
       <div v-else class="grid grid-cols-[3.5rem_1fr_3.5rem] items-center gap-2">
-        <button class="inline-flex min-h-12 items-center justify-center rounded-xl border-0 bg-transparent text-ink" type="button" title="Menu" @click="app.openMenuSheet">
+        <button class="inline-flex min-h-12 items-center justify-center rounded-xl border-0 bg-transparent text-ink" type="button" title="Menu" @click="app.openMenuSheet()">
           <Menu :size="22" />
         </button>
-        <button class="btn-primary inline-flex min-h-12 items-center justify-center rounded-xl px-4 font-normal" type="button" @click="app.openProjectsSheet">
+        <button class="btn-primary inline-flex min-h-12 items-center justify-center rounded-xl px-4 font-normal" type="button" @click="app.openProjectsSheet()">
           Projects
         </button>
         <button class="min-h-12 rounded-xl bg-transparent" type="button" aria-hidden="true" tabindex="-1"></button>

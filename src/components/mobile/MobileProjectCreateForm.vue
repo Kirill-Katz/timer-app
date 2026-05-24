@@ -11,7 +11,7 @@ defineProps<{
 <template>
   <div class="grid gap-3">
     <div class="flex min-h-10 items-center gap-2">
-      <MobileBackButton class="shrink-0" compact aria-label="Back" @click="app.projectCreateOpen = false" />
+      <MobileBackButton class="shrink-0" compact aria-label="Back" @click="app.closeProjectCreate" />
       <h2 class="truncate text-2xl font-medium">New project</h2>
     </div>
     <form class="grid gap-2" @submit.prevent="app.addMobileProject">

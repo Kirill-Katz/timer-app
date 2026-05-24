@@ -11,8 +11,31 @@ import { dayKey, formatDateTime, formatDuration as formatTimeLogDuration, format
 import { useProjectSwipeActions } from './useProjectSwipeActions';
 import { buildGroupedLogs, sortLogsDesc, sortTasksByStatus, updateDurationTotal } from './useTimeTrackerDerivations';
 
+type PreviousMobileScreen = 'main' | 'detail' | 'settings' | 'reports' | 'calendar';
+type HistorySyncMode = 'push' | 'replace' | 'none';
+type NavigationSnapshot = {
+  previousMobileScreen: PreviousMobileScreen;
+  reportsOpen: boolean;
+  settingsOpen: boolean;
+  calendarOpen: boolean;
+  menuSheetOpen: boolean;
+  projectsSheetOpen: boolean;
+  projectCreateOpen: boolean;
+  taskSheetProjectId: string | null;
+  taskCreateOpen: boolean;
+  editingLogId: string | null;
+  detailGroup: DetailGroup | null;
+  projectLogDetailProjectId: string | null;
+  editPickerMode: 'project' | 'task' | null;
+};
+type AppHistoryState = {
+  __timeTrackerNavigation: true;
+  snapshot: NavigationSnapshot;
+};
+
 export function useTimeTrackerApp() {
   const MOBILE_TIMELINE_PAGE_SIZE = 50;
+  const APP_HISTORY_MARKER = '__timeTrackerNavigation';
 
   const userId = ref<string | null>(null);
   const email = ref('');
@@ -92,6 +115,279 @@ export function useTimeTrackerApp() {
   const visibleLogs = computed(() => logs.value.filter((log) => includeArchived.value || !projectById(log.project_id)?.archived));
   const canStartTimer = computed(() => Boolean(userId.value && selectedProjectId.value && !runningLog.value));
   const currentEditingLog = computed(() => editingLogId.value ? logs.value.find((log) => log.id === editingLogId.value) : undefined);
+  let historyReady = false;
+  let restoringHistory = false;
+  let historyRestoreSequence = 0;
+
+  function cloneDetailGroup(group: DetailGroup | null) {
+    return group ? { ...group } : null;
+  }
+
+  function clearLogForm() {
+    logForm.project_id = '';
+    logForm.task_id = '';
+    logForm.date = '';
+    logForm.start_time = '';
+    logForm.end_time = '';
+  }
+
+  function populateLogForm(log: TimeLog) {
+    logForm.project_id = log.project_id;
+    logForm.task_id = log.task_id ?? '';
+    logForm.date = toDateLocal(log.start_time);
+    logForm.start_time = toTimeLocal(log.start_time);
+    logForm.end_time = log.end_time ? toTimeLocal(log.end_time) : '';
+  }
+
+  function resetProjectLogDetailState() {
+    projectLogDetailProjectId.value = null;
+    projectLogDetailLogs.value = [];
+    projectLogOffset.value = 0;
+    totalProjectLogCount.value = 0;
+    hasMoreProjectLogs.value = true;
+    loadingMoreProjectLogs.value = false;
+  }
+
+  function resetSheets() {
+    menuSheetOpen.value = false;
+    projectsSheetOpen.value = false;
+    projectCreateOpen.value = false;
+    taskSheetProjectId.value = null;
+    taskCreateOpen.value = false;
+    mobileTaskName.value = '';
+  }
+
+  function captureNavigationSnapshot(): NavigationSnapshot {
+    return {
+      previousMobileScreen: previousMobileScreen.value,
+      reportsOpen: reportsOpen.value,
+      settingsOpen: settingsOpen.value,
+      calendarOpen: calendarOpen.value,
+      menuSheetOpen: menuSheetOpen.value,
+      projectsSheetOpen: projectsSheetOpen.value,
+      projectCreateOpen: projectCreateOpen.value,
+      taskSheetProjectId: taskSheetProjectId.value,
+      taskCreateOpen: taskCreateOpen.value,
+      editingLogId: editingLogId.value,
+      detailGroup: cloneDetailGroup(detailGroup.value),
+      projectLogDetailProjectId: projectLogDetailProjectId.value,
+      editPickerMode: editPickerMode.value
+    };
+  }
+
+  function normalizeNavigationSnapshot(snapshot: NavigationSnapshot): NavigationSnapshot {
+    const normalized: NavigationSnapshot = {
+      ...snapshot,
+      detailGroup: cloneDetailGroup(snapshot.detailGroup)
+    };
+
+    if (!normalized.projectsSheetOpen) {
+      normalized.projectCreateOpen = false;
+      normalized.taskSheetProjectId = null;
+      normalized.taskCreateOpen = false;
+    }
+
+    if (normalized.projectCreateOpen) {
+      normalized.taskSheetProjectId = null;
+      normalized.taskCreateOpen = false;
+    }
+
+    if (!normalized.taskSheetProjectId) {
+      normalized.taskCreateOpen = false;
+    }
+
+    if (!normalized.editingLogId) {
+      normalized.editPickerMode = null;
+    }
+
+    return normalized;
+  }
+
+  function navigationSnapshotsEqual(left: NavigationSnapshot, right: NavigationSnapshot) {
+    return left.previousMobileScreen === right.previousMobileScreen
+      && left.reportsOpen === right.reportsOpen
+      && left.settingsOpen === right.settingsOpen
+      && left.calendarOpen === right.calendarOpen
+      && left.menuSheetOpen === right.menuSheetOpen
+      && left.projectsSheetOpen === right.projectsSheetOpen
+      && left.projectCreateOpen === right.projectCreateOpen
+      && left.taskSheetProjectId === right.taskSheetProjectId
+      && left.taskCreateOpen === right.taskCreateOpen
+      && left.editingLogId === right.editingLogId
+      && left.projectLogDetailProjectId === right.projectLogDetailProjectId
+      && left.editPickerMode === right.editPickerMode
+      && left.detailGroup?.day === right.detailGroup?.day
+      && left.detailGroup?.projectId === right.detailGroup?.projectId
+      && left.detailGroup?.taskId === right.detailGroup?.taskId;
+  }
+
+  function isAppHistoryState(state: unknown): state is AppHistoryState {
+    return Boolean(
+      state
+      && typeof state === 'object'
+      && APP_HISTORY_MARKER in state
+      && (state as Record<string, unknown>)[APP_HISTORY_MARKER] === true
+      && 'snapshot' in state
+    );
+  }
+
+  function readHistorySnapshot() {
+    if (!isAppHistoryState(window.history.state)) return null;
+    return normalizeNavigationSnapshot(window.history.state.snapshot);
+  }
+
+  function writeHistorySnapshot(mode: HistorySyncMode, snapshot = captureNavigationSnapshot()) {
+    if (!historyReady || restoringHistory || mode === 'none') return;
+
+    const normalized = normalizeNavigationSnapshot(snapshot);
+    const current = readHistorySnapshot();
+    if (current && navigationSnapshotsEqual(current, normalized)) {
+      if (mode === 'replace') {
+        window.history.replaceState({ __timeTrackerNavigation: true, snapshot: normalized } satisfies AppHistoryState, document.title);
+      }
+      return;
+    }
+
+    const nextState = { __timeTrackerNavigation: true, snapshot: normalized } satisfies AppHistoryState;
+    if (mode === 'push') {
+      window.history.pushState(nextState, document.title);
+      return;
+    }
+
+    window.history.replaceState(nextState, document.title);
+  }
+
+  function isBaseSnapshot(snapshot: NavigationSnapshot) {
+    return !snapshot.reportsOpen
+      && !snapshot.settingsOpen
+      && !snapshot.calendarOpen
+      && !snapshot.menuSheetOpen
+      && !snapshot.projectsSheetOpen
+      && !snapshot.projectCreateOpen
+      && !snapshot.taskSheetProjectId
+      && !snapshot.taskCreateOpen
+      && !snapshot.editingLogId
+      && !snapshot.detailGroup
+      && !snapshot.projectLogDetailProjectId
+      && !snapshot.editPickerMode;
+  }
+
+  function navigateBackOr(fallback: () => void) {
+    const current = readHistorySnapshot();
+    if (current && !isBaseSnapshot(current)) {
+      window.history.back();
+      return;
+    }
+
+    fallback();
+  }
+
+  function navigateHistoryDelta(delta: number, fallback: () => void) {
+    if (delta <= 0) {
+      fallback();
+      return;
+    }
+
+    const current = readHistorySnapshot();
+    if (current) {
+      window.history.go(-delta);
+      return;
+    }
+
+    fallback();
+  }
+
+  function currentSheetHistoryDepth() {
+    if (taskCreateOpen.value) return 3;
+    if (taskSheetProjectId.value) return 2;
+    if (projectCreateOpen.value) return 2;
+    if (projectsSheetOpen.value || menuSheetOpen.value) return 1;
+    return 0;
+  }
+
+  function applyNavigationSnapshot(snapshot: NavigationSnapshot) {
+    const normalized = normalizeNavigationSnapshot(snapshot);
+
+    previousMobileScreen.value = normalized.previousMobileScreen;
+    reportsOpen.value = normalized.reportsOpen;
+    settingsOpen.value = normalized.settingsOpen;
+    calendarOpen.value = normalized.calendarOpen;
+    menuSheetOpen.value = normalized.menuSheetOpen;
+    projectsSheetOpen.value = normalized.projectsSheetOpen;
+    projectCreateOpen.value = normalized.projectCreateOpen;
+    taskSheetProjectId.value = normalized.taskSheetProjectId;
+    taskCreateOpen.value = normalized.taskCreateOpen;
+    editingLogId.value = normalized.editingLogId;
+    detailGroup.value = cloneDetailGroup(normalized.detailGroup);
+    projectLogDetailProjectId.value = normalized.projectLogDetailProjectId;
+    editPickerMode.value = normalized.editPickerMode;
+
+    if (editingLogId.value) {
+      const log = logs.value.find((entry) => entry.id === editingLogId.value);
+      if (log) {
+        populateLogForm(log);
+      } else {
+        editingLogId.value = null;
+        editPickerMode.value = null;
+        clearLogForm();
+      }
+    } else {
+      clearLogForm();
+    }
+
+    if (!detailGroup.value) {
+      detailLogs.value = [];
+    } else {
+      detailLogs.value = [];
+    }
+
+    if (!projectLogDetailProjectId.value) {
+      resetProjectLogDetailState();
+    } else {
+      projectLogDetailLogs.value = [];
+      projectLogOffset.value = 0;
+      totalProjectLogCount.value = 0;
+      hasMoreProjectLogs.value = true;
+      loadingMoreProjectLogs.value = false;
+    }
+
+    if (!taskCreateOpen.value) {
+      mobileTaskName.value = '';
+    }
+  }
+
+  async function restoreNavigationSnapshot(snapshot: NavigationSnapshot) {
+    const normalized = normalizeNavigationSnapshot(snapshot);
+    const restoreSequence = ++historyRestoreSequence;
+
+    restoringHistory = true;
+    try {
+      applyNavigationSnapshot(normalized);
+    } finally {
+      restoringHistory = false;
+    }
+
+    if (normalized.detailGroup && userId.value) {
+      const nextDetailLogs = await listTimeLogsForGroup(userId.value, normalized.detailGroup.day, normalized.detailGroup.projectId, normalized.detailGroup.taskId);
+      if (
+        restoreSequence === historyRestoreSequence
+        && detailGroup.value?.day === normalized.detailGroup.day
+        && detailGroup.value?.projectId === normalized.detailGroup.projectId
+        && detailGroup.value?.taskId === normalized.detailGroup.taskId
+      ) {
+        detailLogs.value = nextDetailLogs;
+      }
+    }
+
+    if (normalized.projectLogDetailProjectId && userId.value && restoreSequence === historyRestoreSequence && projectLogDetailProjectId.value === normalized.projectLogDetailProjectId) {
+      await loadInitialProjectLogs(normalized.projectLogDetailProjectId);
+    }
+  }
+
+  function handlePopState(event: PopStateEvent) {
+    if (!isAppHistoryState(event.state)) return;
+    void restoreNavigationSnapshot(event.state.snapshot);
+  }
 
   function updateProjectDurationTotal(projectId: string, deltaMs: number) {
     projectDurationTotals.value = updateDurationTotal(projectDurationTotals.value, projectId, deltaMs);
@@ -261,6 +557,10 @@ export function useTimeTrackerApp() {
   }
 
   onMounted(async () => {
+    historyReady = true;
+    window.history.replaceState({ __timeTrackerNavigation: true, snapshot: captureNavigationSnapshot() } satisfies AppHistoryState, document.title);
+    window.addEventListener('popstate', handlePopState);
+
     unsubscribeSync = subscribeSyncState((state) => {
       Object.assign(syncState, state);
       void refreshLocalData();
@@ -298,6 +598,8 @@ export function useTimeTrackerApp() {
     stopSync?.();
     unsubscribeSync?.();
     unsubscribeAuth?.();
+    historyReady = false;
+    window.removeEventListener('popstate', handlePopState);
     window.removeEventListener('online', handleOnlineRecovery);
     if (timerInterval) window.clearInterval(timerInterval);
   });
@@ -357,7 +659,8 @@ export function useTimeTrackerApp() {
     hasMoreProjectLogs.value = true;
     loadingMoreProjectLogs.value = false;
     syncState.pendingCount = 0;
-    closeSheets();
+    resetSheets();
+    writeHistorySnapshot('replace');
   }
 
   async function signIn() {
@@ -445,6 +748,7 @@ export function useTimeTrackerApp() {
     if (!projectForm.name.trim()) return;
     await addProject();
     projectCreateOpen.value = false;
+    writeHistorySnapshot('replace');
   }
 
   async function saveSelectedProject() {
@@ -479,6 +783,7 @@ export function useTimeTrackerApp() {
     await createTask(userId.value, taskSheetProjectId.value, mobileTaskName.value.trim());
     mobileTaskName.value = '';
     taskCreateOpen.value = false;
+    writeHistorySnapshot('replace');
     await refreshLocalData();
   }
 
@@ -517,7 +822,8 @@ export function useTimeTrackerApp() {
     selectedTaskId.value = taskId;
     const startedLog = await startTimer(userId.value, projectId, taskId);
     applyLogStateMutation(null, startedLog);
-    closeSheets();
+    resetSheets();
+    writeHistorySnapshot('replace');
   }
 
   async function endTimer() {
@@ -542,7 +848,7 @@ export function useTimeTrackerApp() {
 
     const updated = await updateTimeLog(userId.value, existing, payload);
     applyLogStateMutation(existing, updated);
-    closeLogEditor();
+    closeLogEditor('replace');
   }
 
   async function deleteLog(log: TimeLog) {
@@ -554,194 +860,281 @@ export function useTimeTrackerApp() {
     };
     applyLogStateMutation(log, deleted);
     if (editingLogId.value === log.id) {
-      closeLogEditor();
+      closeLogEditor('replace');
     }
   }
 
-  function openLogEditor(log: TimeLog) {
+  function openLogEditor(log: TimeLog, historyMode: HistorySyncMode = 'push') {
     previousMobileScreen.value = detailGroup.value ? 'detail' : settingsOpen.value ? 'settings' : reportsOpen.value ? 'reports' : calendarOpen.value ? 'calendar' : 'main';
     reportsOpen.value = false;
     settingsOpen.value = false;
     calendarOpen.value = false;
-    closeSheets();
+    resetSheets();
     editingLogId.value = log.id;
-    logForm.project_id = log.project_id;
-    logForm.task_id = log.task_id ?? '';
-    logForm.date = toDateLocal(log.start_time);
-    logForm.start_time = toTimeLocal(log.start_time);
-    logForm.end_time = log.end_time ? toTimeLocal(log.end_time) : '';
+    populateLogForm(log);
+    writeHistorySnapshot(historyMode);
   }
 
-  function closeLogEditor() {
+  function closeLogEditor(historyMode: Exclude<HistorySyncMode, 'push'> = 'replace') {
     editingLogId.value = null;
-    logForm.project_id = '';
-    logForm.task_id = '';
-    logForm.date = '';
-    logForm.start_time = '';
-    logForm.end_time = '';
+    clearLogForm();
     editPickerMode.value = null;
     if (previousMobileScreen.value !== 'detail') {
       detailGroup.value = null;
     }
+    writeHistorySnapshot(historyMode);
   }
 
-  async function openLogDetail(day: string, projectId: string, taskId: string | null) {
-    closeLogEditor();
-    closeProjectLogDetail();
+  async function openLogDetail(day: string, projectId: string, taskId: string | null, historyMode: HistorySyncMode = 'push') {
+    closeLogEditor('none');
+    closeProjectLogDetail('none');
     reportsOpen.value = false;
     settingsOpen.value = false;
     calendarOpen.value = false;
-    closeSheets();
+    resetSheets();
     detailGroup.value = { day, projectId, taskId };
     if (userId.value) {
       detailLogs.value = await listTimeLogsForGroup(userId.value, day, projectId, taskId);
     }
+    writeHistorySnapshot(historyMode);
   }
 
-  function closeLogDetail() {
-    detailGroup.value = null;
-    detailLogs.value = [];
+  function closeLogDetail(historyMode: Exclude<HistorySyncMode, 'push'> = 'replace') {
+    const applyClose = () => {
+      detailGroup.value = null;
+      detailLogs.value = [];
+      writeHistorySnapshot(historyMode);
+    };
+
+    if (historyMode === 'none') {
+      applyClose();
+      return;
+    }
+
+    navigateBackOr(applyClose);
   }
 
-  async function openProjectLogDetail(projectId: string) {
-    closeLogEditor();
-    closeLogDetail();
+  async function openProjectLogDetail(projectId: string, historyMode: HistorySyncMode = 'push') {
+    closeLogEditor('none');
+    closeLogDetail('none');
     reportsOpen.value = false;
     settingsOpen.value = false;
     calendarOpen.value = false;
-    closeSheets();
+    resetSheets();
     projectLogDetailProjectId.value = projectId;
     projectLogDetailLogs.value = [];
     await loadInitialProjectLogs(projectId);
+    writeHistorySnapshot(historyMode);
   }
 
-  function closeProjectLogDetail() {
-    projectLogDetailProjectId.value = null;
-    projectLogDetailLogs.value = [];
-    projectLogOffset.value = 0;
-    totalProjectLogCount.value = 0;
-    hasMoreProjectLogs.value = true;
-    loadingMoreProjectLogs.value = false;
+  function closeProjectLogDetail(historyMode: Exclude<HistorySyncMode, 'push'> = 'replace') {
+    const applyClose = () => {
+      resetProjectLogDetailState();
+      writeHistorySnapshot(historyMode);
+    };
+
+    if (historyMode === 'none') {
+      applyClose();
+      return;
+    }
+
+    navigateBackOr(applyClose);
   }
 
-  function openReports() {
+  function openReports(historyMode: HistorySyncMode = 'push') {
     previousMobileScreen.value = detailGroup.value ? 'detail' : 'main';
-    closeLogEditor();
-    closeLogDetail();
-    closeProjectLogDetail();
-    closeSheets();
+    closeLogEditor('none');
+    closeLogDetail('none');
+    closeProjectLogDetail('none');
+    resetSheets();
     settingsOpen.value = false;
     calendarOpen.value = false;
     reportsOpen.value = true;
+    writeHistorySnapshot(historyMode);
   }
 
-  function closeReports() {
-    reportsOpen.value = false;
+  function closeReports(historyMode: Exclude<HistorySyncMode, 'push'> = 'replace') {
+    const applyClose = () => {
+      reportsOpen.value = false;
+      writeHistorySnapshot(historyMode);
+    };
+
+    if (historyMode === 'none') {
+      applyClose();
+      return;
+    }
+
+    navigateBackOr(applyClose);
   }
 
-  function openSettings() {
+  function openSettings(historyMode: HistorySyncMode = 'push') {
     previousMobileScreen.value = detailGroup.value ? 'detail' : 'main';
-    closeLogEditor();
-    closeLogDetail();
-    closeProjectLogDetail();
-    closeSheets();
+    closeLogEditor('none');
+    closeLogDetail('none');
+    closeProjectLogDetail('none');
+    resetSheets();
     reportsOpen.value = false;
     calendarOpen.value = false;
     settingsOpen.value = true;
+    writeHistorySnapshot(historyMode);
   }
 
-  function closeSettings() {
-    settingsOpen.value = false;
+  function closeSettings(historyMode: Exclude<HistorySyncMode, 'push'> = 'replace') {
+    const applyClose = () => {
+      settingsOpen.value = false;
+      writeHistorySnapshot(historyMode);
+    };
+
+    if (historyMode === 'none') {
+      applyClose();
+      return;
+    }
+
+    navigateBackOr(applyClose);
   }
 
-  function openCalendar() {
+  function openCalendar(historyMode: HistorySyncMode = 'push') {
     previousMobileScreen.value = detailGroup.value ? 'detail' : 'main';
-    closeLogEditor();
-    closeLogDetail();
-    closeProjectLogDetail();
-    closeSheets();
+    closeLogEditor('none');
+    closeLogDetail('none');
+    closeProjectLogDetail('none');
+    resetSheets();
     reportsOpen.value = false;
     settingsOpen.value = false;
     calendarOpen.value = true;
+    writeHistorySnapshot(historyMode);
   }
 
-  function closeCalendar() {
-    calendarOpen.value = false;
+  function closeCalendar(historyMode: Exclude<HistorySyncMode, 'push'> = 'replace') {
+    const applyClose = () => {
+      calendarOpen.value = false;
+      writeHistorySnapshot(historyMode);
+    };
+
+    if (historyMode === 'none') {
+      applyClose();
+      return;
+    }
+
+    navigateBackOr(applyClose);
   }
 
   function goBackFromEditor() {
-    editingLogId.value = null;
-    editPickerMode.value = null;
-    if (previousMobileScreen.value !== 'detail') {
-      detailGroup.value = null;
-    }
+    navigateBackOr(() => {
+      closeLogEditor('replace');
+    });
   }
 
-  function openEditPicker(mode: 'project' | 'task') {
+  function openEditPicker(mode: 'project' | 'task', historyMode: HistorySyncMode = 'push') {
     editPickerMode.value = mode;
+    writeHistorySnapshot(historyMode);
   }
 
-  function closeEditPicker() {
+  function closeEditPicker(historyMode: Exclude<HistorySyncMode, 'push'> = 'replace') {
     editPickerMode.value = null;
+    writeHistorySnapshot(historyMode);
   }
 
   function selectEditProject(projectId: string) {
     logForm.project_id = projectId;
     handleLogProjectChange();
-    editPickerMode.value = null;
+    closeEditPicker('replace');
   }
 
   function selectEditTask(taskId: string | null) {
     logForm.task_id = taskId ?? '';
-    editPickerMode.value = null;
+    closeEditPicker('replace');
   }
 
-  function openMenuSheet() {
-    closeLogEditor();
+  function openMenuSheet(historyMode: HistorySyncMode = 'push') {
+    closeLogEditor('none');
     projectsSheetOpen.value = false;
     projectCreateOpen.value = false;
     menuSheetOpen.value = true;
+    writeHistorySnapshot(historyMode);
   }
 
-  function openTimeline() {
-    closeLogEditor();
-    closeLogDetail();
-    closeProjectLogDetail();
-    closeSheets();
+  function openTimeline(historyMode: HistorySyncMode = 'push') {
+    const returningToCurrentTimeline = menuSheetOpen.value && !reportsOpen.value && !settingsOpen.value && !calendarOpen.value;
+
+    closeLogEditor('none');
+    closeLogDetail('none');
+    closeProjectLogDetail('none');
+    resetSheets();
     reportsOpen.value = false;
     settingsOpen.value = false;
     calendarOpen.value = false;
     timelineScrollTop.value = 0;
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (returningToCurrentTimeline) {
+      navigateHistoryDelta(1, () => {
+        writeHistorySnapshot('replace');
+      });
+      return;
+    }
+
+    writeHistorySnapshot(historyMode);
   }
 
-  function openProjectsSheet() {
-    closeLogEditor();
+  function openProjectsSheet(historyMode: HistorySyncMode = 'push') {
+    closeLogEditor('none');
     menuSheetOpen.value = false;
     projectCreateOpen.value = false;
     taskSheetProjectId.value = null;
     taskCreateOpen.value = false;
     projectsSheetOpen.value = true;
+    writeHistorySnapshot(historyMode);
   }
 
-  function openProjectCreate() {
+  function openProjectCreate(historyMode: HistorySyncMode = 'push') {
     projectCreateOpen.value = true;
+    writeHistorySnapshot(historyMode);
   }
 
   function closeSheets() {
-    menuSheetOpen.value = false;
-    projectsSheetOpen.value = false;
-    projectCreateOpen.value = false;
-    taskSheetProjectId.value = null;
-    taskCreateOpen.value = false;
-    mobileTaskName.value = '';
+    const historyDepth = currentSheetHistoryDepth();
+    navigateHistoryDelta(historyDepth, () => {
+      resetSheets();
+      writeHistorySnapshot('replace');
+    });
   }
 
-  function openProjectTasks(projectId: string) {
+  function closeProjectCreate() {
+    navigateBackOr(() => {
+      projectCreateOpen.value = false;
+      writeHistorySnapshot('replace');
+    });
+  }
+
+  function openProjectTasks(projectId: string, historyMode: HistorySyncMode = 'push') {
     taskSheetProjectId.value = projectId;
     projectCreateOpen.value = false;
     taskCreateOpen.value = false;
     mobileTaskName.value = '';
+    writeHistorySnapshot(historyMode);
+  }
+
+  function closeProjectTasks() {
+    navigateBackOr(() => {
+      taskSheetProjectId.value = null;
+      taskCreateOpen.value = false;
+      mobileTaskName.value = '';
+      writeHistorySnapshot('replace');
+    });
+  }
+
+  function openTaskCreate(historyMode: HistorySyncMode = 'push') {
+    taskCreateOpen.value = true;
+    writeHistorySnapshot(historyMode);
+  }
+
+  function closeTaskCreate() {
+    navigateBackOr(() => {
+      taskCreateOpen.value = false;
+      mobileTaskName.value = '';
+      writeHistorySnapshot('replace');
+    });
   }
 
   const projectSwipe = useProjectSwipeActions(openProjectTasks);
@@ -874,7 +1267,11 @@ export function useTimeTrackerApp() {
     openTimeline,
     openProjectsSheet,
     openProjectCreate,
+    closeProjectCreate,
     closeSheets,
+    closeProjectTasks,
+    openTaskCreate,
+    closeTaskCreate,
     handleProjectSwipeStart: projectSwipe.handleProjectSwipeStart,
     handleProjectSwipeMove: projectSwipe.handleProjectSwipeMove,
     handleProjectSwipeEnd: projectSwipe.handleProjectSwipeEnd,

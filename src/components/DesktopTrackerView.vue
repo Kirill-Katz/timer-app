@@ -18,9 +18,9 @@ defineProps<{
 
 <template>
   <header class="mx-auto mb-3 hidden max-w-7xl justify-end gap-2 sm:flex">
-    <button class="btn-primary inline-flex min-h-11 items-center justify-center rounded-lg px-4" type="button" @click="app.openCalendar">Calendar</button>
-    <button class="btn-primary inline-flex min-h-11 items-center justify-center rounded-lg px-4" type="button" @click="app.openReports">Reports</button>
-    <button class="btn-primary inline-flex min-h-11 w-11 items-center justify-center rounded-lg" type="button" title="Settings" @click="app.openSettings">
+    <button class="btn-primary inline-flex min-h-11 items-center justify-center rounded-lg px-4" type="button" @click="app.openCalendar()">Calendar</button>
+    <button class="btn-primary inline-flex min-h-11 items-center justify-center rounded-lg px-4" type="button" @click="app.openReports()">Reports</button>
+    <button class="btn-primary inline-flex min-h-11 w-11 items-center justify-center rounded-lg" type="button" title="Settings" @click="app.openSettings()">
       <Settings :size="20" />
     </button>
   </header>

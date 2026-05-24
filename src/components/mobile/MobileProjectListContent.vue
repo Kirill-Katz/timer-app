@@ -10,7 +10,7 @@ defineProps<{
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col gap-3">
-    <button class="btn-primary inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-4 font-normal" type="button" @click="app.openProjectCreate">
+    <button class="btn-primary inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-4 font-normal" type="button" @click="app.openProjectCreate()">
       <Plus :size="18" /> Add new project
     </button>
     <VirtualScroller class="max-h-[46vh] pb-8" :items="app.projects" :item-height="56" item-key="id" :overscan="8">
