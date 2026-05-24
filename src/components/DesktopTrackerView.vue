@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Settings } from 'lucide-vue-next';
 import type { TimeTrackerAppContext } from '../composables/useTimeTrackerApp';
-import EmptyCalendarPanel from './EmptyCalendarPanel.vue';
+import CalendarPanel from './CalendarPanel.vue';
 import ReportsPanel from './ReportsPanel.vue';
 import SettingsPanel from './SettingsPanel.vue';
 import DesktopLogEditor from './desktop/DesktopLogEditor.vue';
@@ -28,7 +28,7 @@ defineProps<{
     <DesktopProjectSidebar :app="app" />
 
     <DesktopPagePanel v-if="app.calendarOpen" title="Calendar" @back="app.closeCalendar">
-      <EmptyCalendarPanel />
+      <CalendarPanel :app="app" />
     </DesktopPagePanel>
 
     <DesktopPagePanel v-else-if="app.reportsOpen" title="Reports" @back="app.closeReports">

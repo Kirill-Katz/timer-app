@@ -1,5 +1,8 @@
 import { ref } from 'vue';
 
+const MAX_SWIPE_REVEAL_PX = 96;
+const OPEN_TASKS_SWIPE_THRESHOLD_PX = 24;
+
 export function useProjectSwipeActions(openProjectTasks: (projectId: string) => void) {
   const swipeStartX = ref(0);
   const swipeStartY = ref(0);
@@ -20,7 +23,7 @@ export function useProjectSwipeActions(openProjectTasks: (projectId: string) => 
     const deltaX = touch.clientX - swipeStartX.value;
     const deltaY = touch.clientY - swipeStartY.value;
     if (deltaX < 0 && Math.abs(deltaY) < 45) {
-      swipeOffsetX.value = Math.max(deltaX, -96);
+      swipeOffsetX.value = Math.max(deltaX, -MAX_SWIPE_REVEAL_PX);
     }
   }
 
@@ -30,7 +33,7 @@ export function useProjectSwipeActions(openProjectTasks: (projectId: string) => 
 
     const deltaX = touch.clientX - swipeStartX.value;
     const deltaY = touch.clientY - swipeStartY.value;
-    if (deltaX < -45 && Math.abs(deltaY) < 35) {
+    if (deltaX < -OPEN_TASKS_SWIPE_THRESHOLD_PX && Math.abs(deltaY) < 35) {
       openProjectTasks(projectId);
     }
     swipingProjectId.value = null;

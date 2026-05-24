@@ -5,13 +5,15 @@ withDefaults(defineProps<{
   show: boolean;
   title: string;
   contentClass?: string;
+  zClass?: string;
 }>(), {
-  contentClass: 'px-4 py-5 pb-24'
+  contentClass: 'px-4 py-5 pb-24',
+  zClass: 'z-[60]'
 });
 </script>
 
 <template>
-  <MobileOverlay :show="show" :content-class="contentClass">
+  <MobileOverlay :show="show" :z-class="zClass" :content-class="contentClass">
     <div class="mb-4">
       <h2 class="text-center text-xl font-medium">{{ title }}</h2>
     </div>

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Menu } from 'lucide-vue-next';
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import CalendarPanel from './CalendarPanel.vue';
 import { isWindowNearBottom } from '../composables/useNearBottomScroll';
 import type { TimeTrackerAppContext } from '../composables/useTimeTrackerApp';
-import EmptyCalendarPanel from './EmptyCalendarPanel.vue';
 import ReportsPanel from './ReportsPanel.vue';
 import SettingsPanel from './SettingsPanel.vue';
 import MobileEditPickerSheet from './mobile/MobileEditPickerSheet.vue';
@@ -91,7 +91,7 @@ watch(
     </MobilePageOverlay>
 
     <MobilePageOverlay :show="app.calendarOpen" title="Calendar">
-      <EmptyCalendarPanel />
+      <CalendarPanel :app="app" />
     </MobilePageOverlay>
 
     <MobilePageOverlay :show="app.settingsOpen" title="Settings">
