@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Archive, ArchiveRestore, ArrowLeft, Check, Circle, CircleDot, Clock, LogOut, Pencil, Play, Plus, Settings, Square, Trash2, Wifi, WifiOff } from 'lucide-vue-next';
 import type { TimeTrackerAppContext } from '../composables/useTimeTrackerApp';
+import ReportsPanel from './ReportsPanel.vue';
 
 defineProps<{
   app: TimeTrackerAppContext;
@@ -50,6 +51,7 @@ defineProps<{
         <div class="mb-5">
           <h2 class="text-3xl font-medium leading-none">Reports</h2>
         </div>
+        <ReportsPanel :app="app" />
       </section>
     </section>
 

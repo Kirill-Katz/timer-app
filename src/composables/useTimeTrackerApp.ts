@@ -20,6 +20,7 @@ export function useTimeTrackerApp() {
   const tasks = ref<Task[]>([]);
   const allTasks = ref<Task[]>([]);
   const logs = ref<TimeLog[]>([]);
+  const reportLogs = ref<TimeLog[]>([]);
   const projectDurationTotals = ref<Record<string, number>>({});
   const taskDurationTotals = ref<Record<string, number>>({});
   const groupedLogs = ref<GroupedLogSection[]>([]);
@@ -194,6 +195,12 @@ export function useTimeTrackerApp() {
       nextLogs.push(next);
     }
     logs.value = sortLogsDesc(nextLogs);
+
+    const nextReportLogs = reportLogs.value.filter((log) => log.id !== previous?.id && log.id !== next?.id);
+    if (next && !next.deleted_at) {
+      nextReportLogs.push(next);
+    }
+    reportLogs.value = sortLogsDesc(nextReportLogs);
 
     applyLogDurationMutation(previous, next);
 
@@ -389,6 +396,7 @@ export function useTimeTrackerApp() {
     tasks.value = [];
     allTasks.value = [];
     logs.value = [];
+    reportLogs.value = [];
     projectDurationTotals.value = {};
     taskDurationTotals.value = {};
     groupedLogs.value = [];
@@ -473,6 +481,7 @@ export function useTimeTrackerApp() {
 
     totalLogCount.value = await countTimeLogs(userId.value);
     const allLogs = await listTimeLogs(userId.value);
+    reportLogs.value = allLogs;
     if (allLogs.length && !(await hasLogAggregates(userId.value))) {
       await rebuildLogAggregates(userId.value);
     }
@@ -915,6 +924,7 @@ export function useTimeTrackerApp() {
     tasks,
     allTasks,
     logs,
+    reportLogs,
     projectDurationTotals,
     taskDurationTotals,
     selectedProjectId,
@@ -955,6 +965,7 @@ export function useTimeTrackerApp() {
     hasMoreProjectLogs,
     loadingMoreProjectLogs,
     timelineScrollTop,
+    ticker,
     signIn,
     signOut,
     synchronizeFromRemote,

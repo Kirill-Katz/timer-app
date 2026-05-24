@@ -19,6 +19,7 @@ import MobileCenteredHeader from './mobile/MobileCenteredHeader.vue';
 import MobileFormField from './mobile/MobileFormField.vue';
 import MobileOverlay from './mobile/MobileOverlay.vue';
 import MobileSettingsCard from './mobile/MobileSettingsCard.vue';
+import ReportsPanel from './ReportsPanel.vue';
 import type { TimeTrackerAppContext } from '../composables/useTimeTrackerApp';
 
 const props = defineProps<{
@@ -266,6 +267,7 @@ watch(() => props.app.projectLogDetailProjectId, (projectId) => {
         <div class="mb-4">
           <h2 class="text-center text-xl font-medium">Reports</h2>
         </div>
+        <ReportsPanel :app="app" />
     </MobileOverlay>
 
     <MobileOverlay :show="app.settingsOpen" content-class="px-4 py-5 pb-24">
