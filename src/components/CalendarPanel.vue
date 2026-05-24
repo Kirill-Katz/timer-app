@@ -1,15 +1,19 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from 'vue';
 import type { TimeTrackerAppContext } from '../composables/useTimeTrackerApp';
 import type { TimeLog } from '../types';
 
 const DEFAULT_DAY_WIDTH_PX = 96;
-const HOUR_HEIGHT_PX = 46;
 const HOURS_PER_DAY = 24;
 const CHUNK_DAYS = 7;
 const MAX_RENDERED_DAYS = 28;
 const INITIAL_PAST_DAYS = 7;
 const INITIAL_FUTURE_DAYS = 14;
+const DEFAULT_HOUR_HEIGHT_PX = 46;
+const MIN_HOUR_HEIGHT_PX = 24;
+const DAY_HEADER_HEIGHT_PX = 48;
+const CALENDAR_BOTTOM_GAP_PX = 8;
+const MOBILE_BOTTOM_BAR_HEIGHT_PX = 76;
 
 type CalendarSegment = {
   id: string;
@@ -37,10 +41,13 @@ const props = defineProps<{
   app: TimeTrackerAppContext;
 }>();
 
+const panelRef = ref<HTMLElement | null>(null);
 const viewportRef = ref<HTMLElement | null>(null);
 const daysRef = ref<HTMLElement | null>(null);
 const rangeStart = ref<Date>(new Date());
 const rangeEnd = ref<Date>(new Date());
+const hourHeightPx = ref(DEFAULT_HOUR_HEIGHT_PX);
+const boardHeightPx = ref((DEFAULT_HOUR_HEIGHT_PX * HOURS_PER_DAY) + DAY_HEADER_HEIGHT_PX);
 let restoringScroll = false;
 let edgeLoadLock: 'past' | 'future' | null = null;
 
@@ -141,8 +148,8 @@ function buildSegmentsForDay(dayStart: Date, logs: TimeLog[]) {
 
     const clippedStart = Math.max(startMs, dayStartMs);
     const clippedEnd = Math.min(endMs, dayEndMs);
-    const top = ((clippedStart - dayStartMs) / 3_600_000) * HOUR_HEIGHT_PX;
-    const height = Math.max(14, ((clippedEnd - clippedStart) / 3_600_000) * HOUR_HEIGHT_PX);
+    const top = ((clippedStart - dayStartMs) / 3_600_000) * hourHeightPx.value;
+    const height = Math.max(14, ((clippedEnd - clippedStart) / 3_600_000) * hourHeightPx.value);
 
     return [{
       id: `${log.id}:${formatDayKey(dayStart)}`,
@@ -188,6 +195,43 @@ function buildDayRange(start: Date, end: Date, logs: TimeLog[] = activeLogs.valu
 function rebuildDays(logs: TimeLog[] = activeLogs.value) {
   days.value = buildDayRange(rangeStart.value, rangeEnd.value, logs);
 }
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(Math.max(value, minimum), maximum);
+}
+
+function updateCalendarMetrics() {
+  const panel = panelRef.value;
+  if (!panel || typeof window === 'undefined') return;
+
+  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+  const reservedBottomSpace = window.matchMedia('(max-width: 639px)').matches ? MOBILE_BOTTOM_BAR_HEIGHT_PX : 0;
+  const availableHeight = Math.max(
+    DAY_HEADER_HEIGHT_PX + (MIN_HOUR_HEIGHT_PX * HOURS_PER_DAY),
+    Math.floor(viewportHeight - panel.getBoundingClientRect().top - reservedBottomSpace - CALENDAR_BOTTOM_GAP_PX)
+  );
+  const nextHourHeight = clamp(
+    Math.floor((availableHeight - DAY_HEADER_HEIGHT_PX) / HOURS_PER_DAY),
+    MIN_HOUR_HEIGHT_PX,
+    DEFAULT_HOUR_HEIGHT_PX
+  );
+  const nextBoardHeight = DAY_HEADER_HEIGHT_PX + (nextHourHeight * HOURS_PER_DAY);
+  const metricsChanged = nextHourHeight !== hourHeightPx.value || nextBoardHeight !== boardHeightPx.value;
+
+  hourHeightPx.value = nextHourHeight;
+  boardHeightPx.value = nextBoardHeight;
+
+  if (metricsChanged && days.value.length) {
+    rebuildDays();
+  }
+}
+
+const calendarBoardStyle = computed<CSSProperties>(() => ({
+  '--calendar-header-height': `${DAY_HEADER_HEIGHT_PX}px`,
+  '--calendar-hour-height': `${hourHeightPx.value}px`,
+  '--calendar-day-body-height': `${hourHeightPx.value * HOURS_PER_DAY}px`,
+  height: `${boardHeightPx.value}px`
+}));
 
 const hourLabels = Array.from({ length: HOURS_PER_DAY }, (_, hour) => {
   const date = new Date();
@@ -329,14 +373,21 @@ function handleHorizontalScroll() {
 onMounted(() => {
   initializeRange();
   rebuildDays();
-  void nextTick(scrollToAnchorDay);
+  void nextTick(() => {
+    updateCalendarMetrics();
+    scrollToAnchorDay();
+  });
+  window.addEventListener('resize', updateCalendarMetrics, { passive: true });
 });
 
 watch(() => props.app.calendarOpen, (open) => {
   if (!open) return;
   initializeRange();
   rebuildDays();
-  void nextTick(scrollToAnchorDay);
+  void nextTick(() => {
+    updateCalendarMetrics();
+    scrollToAnchorDay();
+  });
 });
 
 watch(activeLogs, (logs) => {
@@ -345,23 +396,25 @@ watch(activeLogs, (logs) => {
 
 onBeforeUnmount(() => {
   restoringScroll = false;
+  window.removeEventListener('resize', updateCalendarMetrics);
 });
 </script>
 
 <template>
-  <section class="grid min-h-0">
-    <div class="calendar-board rounded-lg border border-line bg-panel/70 shadow-soft">
+  <section ref="panelRef" class="calendar-panel grid min-h-0">
+    <div
+      ref="viewportRef"
+      class="calendar-board rounded-lg border border-line bg-panel/70 shadow-soft"
+      :style="calendarBoardStyle"
+      @scroll.passive="handleHorizontalScroll"
+    >
       <div class="calendar-board__layout">
         <div class="calendar-hours">
           <div class="calendar-hours__spacer"></div>
           <div v-for="label in hourLabels" :key="label" class="calendar-hours__label">{{ label }}</div>
         </div>
 
-        <div
-          ref="viewportRef"
-          class="calendar-board__viewport"
-          @scroll.passive="handleHorizontalScroll"
-        >
+        <div class="calendar-board__viewport">
           <div ref="daysRef" class="calendar-board__days">
             <div
               v-for="day in days"
