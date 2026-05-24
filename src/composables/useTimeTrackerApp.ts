@@ -1,16 +1,18 @@
 import { computed, onMounted, onUnmounted, proxyRefs, reactive, ref } from 'vue';
 import { supabase, getCurrentUserId, handleAuthRedirect } from '../services/supabase';
-import { completedTimeLogDurationMs, durationBetweenMs, timeLogDurationMs } from './useTimeLogDuration';
+import { completedTimeLogDurationMs, timeLogDurationMs } from './useTimeLogDuration';
 import { hasLogAggregates, rebuildLogAggregates } from '../services/log-aggregates';
 import { ensureBootstrapData, reloadFromRemote, startBackgroundSync, subscribeSyncState, type SyncState } from '../services/sync-queue';
 import { createProject, listProjects, setProjectArchived, updateProject } from '../stores/projects';
 import { createTask, listTasks, listTasksForProject, setTaskArchived, setTaskCompleted, updateTask } from '../stores/tasks';
 import { countProjectTimeLogs, countTimeLogs, getRunningLog, listProjectTimeLogsPage, listTimeLogs, listTimeLogsForGroup, listTimeLogsPage, softDeleteTimeLog, startTimer, stopTimer, sumProjectTimeLogDurations, sumTaskTimeLogDurations, updateTimeLog } from '../stores/time-logs';
-import type { DetailGroup, GroupedLogEntry, GroupedLogSection, Project, Task, TimeLog } from '../types';
+import type { DetailGroup, GroupedLogSection, Project, Task, TimeLog } from '../types';
+import { dayKey, formatDateTime, formatDuration as formatTimeLogDuration, formatDurationMs, formatTime, fromDateAndTimeLocal, toDateLocal, toTimeLocal } from './useDateTimeFormatters';
+import { useProjectSwipeActions } from './useProjectSwipeActions';
+import { buildGroupedLogs, sortLogsDesc, sortTasksByStatus, updateDurationTotal } from './useTimeTrackerDerivations';
 
 export function useTimeTrackerApp() {
   const MOBILE_TIMELINE_PAGE_SIZE = 50;
-  const sortTasks = (taskList: Task[]) => taskList.slice().sort(compareTasks);
 
   const userId = ref<string | null>(null);
   const email = ref('');
@@ -33,19 +35,16 @@ export function useTimeTrackerApp() {
   const runningLog = ref<TimeLog | undefined>();
   const editingLogId = ref<string | null>(null);
   const detailGroup = ref<DetailGroup | null>(null);
-  const previousMobileScreen = ref<'main' | 'detail' | 'settings' | 'reports'>('main');
+  const previousMobileScreen = ref<'main' | 'detail' | 'settings' | 'reports' | 'calendar'>('main');
   const reportsOpen = ref(false);
   const settingsOpen = ref(false);
+  const calendarOpen = ref(false);
   const menuSheetOpen = ref(false);
   const projectsSheetOpen = ref(false);
   const projectCreateOpen = ref(false);
   const taskSheetProjectId = ref<string | null>(null);
   const taskCreateOpen = ref(false);
   const mobileTaskName = ref('');
-  const swipeStartX = ref(0);
-  const swipeStartY = ref(0);
-  const swipingProjectId = ref<string | null>(null);
-  const swipeOffsetX = ref(0);
   const editPickerMode = ref<'project' | 'task' | null>(null);
   const logOffset = ref(0);
   const totalLogCount = ref(0);
@@ -87,75 +86,19 @@ export function useTimeTrackerApp() {
   const selectedProject = computed(() => projects.value.find((project) => project.id === selectedProjectId.value));
   const taskSheetProject = computed(() => projects.value.find((project) => project.id === taskSheetProjectId.value));
   const projectLogDetailProject = computed(() => projects.value.find((project) => project.id === projectLogDetailProjectId.value));
-  const taskSheetTasks = computed(() => sortTasks(allTasks.value.filter((task) => task.project_id === taskSheetProjectId.value && (includeArchived.value || !task.archived))));
-  const activeTasks = computed(() => sortTasks(tasks.value.filter((task) => includeArchived.value || !task.archived)));
-  const logFormTasks = computed(() => sortTasks(allTasks.value.filter((task) => task.project_id === logForm.project_id && (includeArchived.value || !task.archived))));
+  const taskSheetTasks = computed(() => sortTasksByStatus(allTasks.value.filter((task) => task.project_id === taskSheetProjectId.value && (includeArchived.value || !task.archived))));
+  const activeTasks = computed(() => sortTasksByStatus(tasks.value.filter((task) => includeArchived.value || !task.archived)));
+  const logFormTasks = computed(() => sortTasksByStatus(allTasks.value.filter((task) => task.project_id === logForm.project_id && (includeArchived.value || !task.archived))));
   const visibleLogs = computed(() => logs.value.filter((log) => includeArchived.value || !projectById(log.project_id)?.archived));
   const canStartTimer = computed(() => Boolean(userId.value && selectedProjectId.value && !runningLog.value));
   const currentEditingLog = computed(() => editingLogId.value ? logs.value.find((log) => log.id === editingLogId.value) : undefined);
 
-  function compareTasks(a: Task, b: Task) {
-    return Number(Boolean(a.completed)) - Number(Boolean(b.completed)) || a.created_at.localeCompare(b.created_at);
-  }
-
-  function buildGroupedLogs(logList: TimeLog[]) {
-    const groups = new Map<string, { totalMs: number; entries: Map<string, GroupedLogEntry> }>();
-    logList.forEach((log) => {
-      const label = dayLabel(log.start_time);
-      const group = groups.get(label) ?? { totalMs: 0, entries: new Map<string, GroupedLogEntry>() };
-      const duration = logDurationMs(log);
-      const key = `${log.project_id}:${log.task_id ?? 'none'}`;
-      const entry = group.entries.get(key) ?? {
-        projectId: log.project_id,
-        taskId: log.task_id,
-        totalMs: 0,
-        latestStart: log.start_time
-      };
-
-      entry.totalMs += duration;
-      if (new Date(log.start_time).getTime() > new Date(entry.latestStart).getTime()) {
-        entry.latestStart = log.start_time;
-      }
-      group.totalMs += duration;
-      group.entries.set(key, entry);
-      groups.set(label, group);
-    });
-
-    return Array.from(groups.entries(), ([label, group]) => ({
-      label,
-      totalMs: group.totalMs,
-      entries: Array.from(group.entries.values()).sort((a, b) => new Date(b.latestStart).getTime() - new Date(a.latestStart).getTime())
-    }));
-  }
-
   function updateProjectDurationTotal(projectId: string, deltaMs: number) {
-    if (!deltaMs) return;
-    const nextTotal = Math.max(0, (projectDurationTotals.value[projectId] ?? 0) + deltaMs);
-    if (nextTotal) {
-      projectDurationTotals.value = {
-        ...projectDurationTotals.value,
-        [projectId]: nextTotal
-      };
-      return;
-    }
-
-    const { [projectId]: _removed, ...rest } = projectDurationTotals.value;
-    projectDurationTotals.value = rest;
+    projectDurationTotals.value = updateDurationTotal(projectDurationTotals.value, projectId, deltaMs);
   }
 
   function updateTaskDurationTotal(taskId: string | null, deltaMs: number) {
-    if (!taskId || !deltaMs) return;
-    const nextTotal = Math.max(0, (taskDurationTotals.value[taskId] ?? 0) + deltaMs);
-    if (nextTotal) {
-      taskDurationTotals.value = {
-        ...taskDurationTotals.value,
-        [taskId]: nextTotal
-      };
-      return;
-    }
-
-    const { [taskId]: _removed, ...rest } = taskDurationTotals.value;
-    taskDurationTotals.value = rest;
+    taskDurationTotals.value = updateDurationTotal(taskDurationTotals.value, taskId, deltaMs);
   }
 
   function applyLogDurationMutation(previous: TimeLog | null | undefined, next: TimeLog | null | undefined) {
@@ -173,12 +116,8 @@ export function useTimeTrackerApp() {
     }
   }
 
-  function sortLogsDesc(logList: TimeLog[]) {
-    return logList.slice().sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
-  }
-
   function rebuildDerivedLogState() {
-    groupedLogs.value = buildGroupedLogs(visibleLogs.value);
+    groupedLogs.value = buildGroupedLogs(visibleLogs.value, logDurationMs);
   }
 
   function applyLogStateMutation(previous: TimeLog | null | undefined, next: TimeLog | null | undefined) {
@@ -406,6 +345,9 @@ export function useTimeTrackerApp() {
     runningLog.value = undefined;
     selectedProjectId.value = '';
     selectedTaskId.value = null;
+    reportsOpen.value = false;
+    settingsOpen.value = false;
+    calendarOpen.value = false;
     logOffset.value = 0;
     totalLogCount.value = 0;
     hasMoreLogs.value = true;
@@ -473,8 +415,8 @@ export function useTimeTrackerApp() {
       selectedProjectId.value = projects.value[0]?.id ?? '';
     }
 
-    tasks.value = selectedProjectId.value ? sortTasks(await listTasksForProject(userId.value, selectedProjectId.value, includeArchived.value)) : [];
-    allTasks.value = sortTasks(await listTasks(userId.value));
+    tasks.value = selectedProjectId.value ? sortTasksByStatus(await listTasksForProject(userId.value, selectedProjectId.value, includeArchived.value)) : [];
+    allTasks.value = sortTasksByStatus(await listTasks(userId.value));
     if (selectedTaskId.value && !tasks.value.some((task) => task.id === selectedTaskId.value)) {
       selectedTaskId.value = null;
     }
@@ -617,9 +559,10 @@ export function useTimeTrackerApp() {
   }
 
   function openLogEditor(log: TimeLog) {
-    previousMobileScreen.value = detailGroup.value ? 'detail' : settingsOpen.value ? 'settings' : reportsOpen.value ? 'reports' : 'main';
+    previousMobileScreen.value = detailGroup.value ? 'detail' : settingsOpen.value ? 'settings' : reportsOpen.value ? 'reports' : calendarOpen.value ? 'calendar' : 'main';
     reportsOpen.value = false;
     settingsOpen.value = false;
+    calendarOpen.value = false;
     closeSheets();
     editingLogId.value = log.id;
     logForm.project_id = log.project_id;
@@ -647,6 +590,7 @@ export function useTimeTrackerApp() {
     closeProjectLogDetail();
     reportsOpen.value = false;
     settingsOpen.value = false;
+    calendarOpen.value = false;
     closeSheets();
     detailGroup.value = { day, projectId, taskId };
     if (userId.value) {
@@ -664,6 +608,7 @@ export function useTimeTrackerApp() {
     closeLogDetail();
     reportsOpen.value = false;
     settingsOpen.value = false;
+    calendarOpen.value = false;
     closeSheets();
     projectLogDetailProjectId.value = projectId;
     projectLogDetailLogs.value = [];
@@ -686,6 +631,7 @@ export function useTimeTrackerApp() {
     closeProjectLogDetail();
     closeSheets();
     settingsOpen.value = false;
+    calendarOpen.value = false;
     reportsOpen.value = true;
   }
 
@@ -700,11 +646,27 @@ export function useTimeTrackerApp() {
     closeProjectLogDetail();
     closeSheets();
     reportsOpen.value = false;
+    calendarOpen.value = false;
     settingsOpen.value = true;
   }
 
   function closeSettings() {
     settingsOpen.value = false;
+  }
+
+  function openCalendar() {
+    previousMobileScreen.value = detailGroup.value ? 'detail' : 'main';
+    closeLogEditor();
+    closeLogDetail();
+    closeProjectLogDetail();
+    closeSheets();
+    reportsOpen.value = false;
+    settingsOpen.value = false;
+    calendarOpen.value = true;
+  }
+
+  function closeCalendar() {
+    calendarOpen.value = false;
   }
 
   function goBackFromEditor() {
@@ -748,6 +710,7 @@ export function useTimeTrackerApp() {
     closeSheets();
     reportsOpen.value = false;
     settingsOpen.value = false;
+    calendarOpen.value = false;
     timelineScrollTop.value = 0;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -781,43 +744,7 @@ export function useTimeTrackerApp() {
     mobileTaskName.value = '';
   }
 
-  function handleProjectSwipeStart(event: TouchEvent) {
-    swipeStartX.value = event.touches[0]?.clientX ?? 0;
-    swipeStartY.value = event.touches[0]?.clientY ?? 0;
-    swipingProjectId.value = (event.currentTarget as HTMLElement | null)?.dataset.projectId ?? null;
-    swipeOffsetX.value = 0;
-  }
-
-  function handleProjectSwipeMove(event: TouchEvent, projectId: string) {
-    const touch = event.touches[0];
-    if (!touch || swipingProjectId.value !== projectId) return;
-
-    const deltaX = touch.clientX - swipeStartX.value;
-    const deltaY = touch.clientY - swipeStartY.value;
-    if (deltaX < 0 && Math.abs(deltaY) < 45) {
-      swipeOffsetX.value = Math.max(deltaX, -96);
-    }
-  }
-
-  function handleProjectSwipeEnd(event: TouchEvent, projectId: string) {
-    const touch = event.changedTouches[0];
-    if (!touch) return;
-
-    const deltaX = touch.clientX - swipeStartX.value;
-    const deltaY = touch.clientY - swipeStartY.value;
-    if (deltaX < -45 && Math.abs(deltaY) < 35) {
-      openProjectTasks(projectId);
-    }
-    swipingProjectId.value = null;
-    swipeOffsetX.value = 0;
-  }
-
-  function projectSwipeStyle(projectId: string) {
-    if (swipingProjectId.value !== projectId) return {};
-    return {
-      transform: `translateX(${swipeOffsetX.value}px)`
-    };
-  }
+  const projectSwipe = useProjectSwipeActions(openProjectTasks);
 
   function handleLogProjectChange() {
     if (!logFormTasks.value.some((task) => task.id === logForm.task_id)) {
@@ -835,15 +762,7 @@ export function useTimeTrackerApp() {
   }
 
   function formatDuration(start: string, end: string | null) {
-    return formatDurationMs(durationBetweenMs(start, end ? new Date(end).getTime() : ticker.value));
-  }
-
-  function formatDurationMs(ms: number) {
-    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    return formatTimeLogDuration(start, end, ticker.value);
   }
 
   function logDurationMs(log: TimeLog) {
@@ -858,61 +777,6 @@ export function useTimeTrackerApp() {
   function projectTotalDurationMs(projectId: string) {
     const runningMs = runningLog.value?.project_id === projectId ? logDurationMs(runningLog.value) : 0;
     return (projectDurationTotals.value[projectId] ?? 0) + runningMs;
-  }
-
-  function formatDateTime(value: string) {
-    return new Intl.DateTimeFormat(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(new Date(value));
-  }
-
-  function dayLabel(value: string) {
-    const date = new Date(value);
-    const today = new Date();
-    const yesterday = new Date();
-    yesterday.setDate(today.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) return 'Today';
-    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-
-    return new Intl.DateTimeFormat(undefined, {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric'
-    }).format(date);
-  }
-
-  function dayKey(value: string) {
-    return new Date(value).toISOString().slice(0, 10);
-  }
-
-  function formatTime(value: string) {
-    return new Intl.DateTimeFormat(undefined, {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    }).format(new Date(value));
-  }
-
-  function toDateLocal(iso: string) {
-    const date = new Date(iso);
-    const offset = date.getTimezoneOffset();
-    const local = new Date(date.getTime() - offset * 60_000);
-    return local.toISOString().slice(0, 10);
-  }
-
-  function toTimeLocal(iso: string) {
-    const date = new Date(iso);
-    const offset = date.getTimezoneOffset();
-    const local = new Date(date.getTime() - offset * 60_000);
-    return local.toISOString().slice(11, 19);
-  }
-
-  function fromDateAndTimeLocal(date: string, time: string) {
-    return new Date(`${date}T${time}`).toISOString();
   }
 
   return proxyRefs({
@@ -936,13 +800,14 @@ export function useTimeTrackerApp() {
     projectLogDetailProjectId,
     reportsOpen,
     settingsOpen,
+    calendarOpen,
     menuSheetOpen,
     projectsSheetOpen,
     projectCreateOpen,
     taskSheetProjectId,
     taskCreateOpen,
     mobileTaskName,
-    swipingProjectId,
+    swipingProjectId: projectSwipe.swipingProjectId,
     editPickerMode,
     syncState,
     projectForm,
@@ -998,6 +863,8 @@ export function useTimeTrackerApp() {
     closeReports,
     openSettings,
     closeSettings,
+    openCalendar,
+    closeCalendar,
     goBackFromEditor,
     openEditPicker,
     closeEditPicker,
@@ -1008,10 +875,10 @@ export function useTimeTrackerApp() {
     openProjectsSheet,
     openProjectCreate,
     closeSheets,
-    handleProjectSwipeStart,
-    handleProjectSwipeMove,
-    handleProjectSwipeEnd,
-    projectSwipeStyle,
+    handleProjectSwipeStart: projectSwipe.handleProjectSwipeStart,
+    handleProjectSwipeMove: projectSwipe.handleProjectSwipeMove,
+    handleProjectSwipeEnd: projectSwipe.handleProjectSwipeEnd,
+    projectSwipeStyle: projectSwipe.projectSwipeStyle,
     handleLogProjectChange,
     projectById,
     taskById,

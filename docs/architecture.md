@@ -2,8 +2,6 @@ Build a Vue PWA time tracker with Supabase as the remote database and IndexedDB 
 
 Supabase credentials are in `.env.local`.
 
-The login email is restricted in the frontend through `VITE_ALLOWED_EMAIL`, defaulting to `cat.chirill@gmail.com`.
-
 This is a personal single-user application, but it still authenticates through Supabase so RLS can use `auth.uid()`.
 
 ```sql
