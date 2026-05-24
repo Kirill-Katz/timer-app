@@ -233,6 +233,19 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
     };
   });
 
+  const selectedRangeTotalMs = computed(() => {
+    const window = selectedRangeWindow.value;
+    if (!window) return 0;
+
+    let totalMs = 0;
+    for (const log of app.reportLogs) {
+      const clipped = clipLogToRange(log, window.start.getTime(), window.endExclusive.getTime(), app.ticker);
+      if (!clipped) continue;
+      totalMs += clipped.end - clipped.start;
+    }
+    return totalMs;
+  });
+
   const chartData = computed<ChartData<'bar'>>(() => ({
     labels: reportSeries.value.buckets.map((bucket) => bucket.label),
     datasets: reportSeries.value.projectOrder.map((projectId) => {
@@ -358,7 +371,7 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
     const window = selectedRangeWindow.value;
     if (!window) return 0;
     const dayCount = Math.max(1, Math.round((window.endExclusive.getTime() - window.start.getTime()) / 86_400_000));
-    return Math.round(reportSeries.value.totalMs / dayCount);
+    return Math.round(selectedRangeTotalMs.value / dayCount);
   });
   const averageDailyTrackedLabel = computed(() => app.formatDurationMs(averageDailyTrackedMs.value));
   const hasData = computed(() => reportSeries.value.buckets.length > 0);
