@@ -1065,7 +1065,7 @@ export function useTimeTrackerApp() {
     settingsOpen.value = false;
     calendarOpen.value = false;
     timelineScrollTop.value = 0;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
 
     if (returningToCurrentTimeline) {
       navigateHistoryDelta(1, () => {
