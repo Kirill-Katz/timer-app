@@ -1,5 +1,30 @@
 import { durationBetweenMs } from './useTimeLogDuration';
 
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit'
+});
+
+const dayLabelFormatter = new Intl.DateTimeFormat(undefined, {
+  weekday: 'long',
+  month: 'short',
+  day: 'numeric'
+});
+
+const timeFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit'
+});
+
+const titleDateFormatter = new Intl.DateTimeFormat(undefined, {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric'
+});
+
 export function formatDurationMs(ms: number) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const hours = Math.floor(totalSeconds / 3600);
@@ -13,12 +38,7 @@ export function formatDuration(start: string, end: string | null, nowMs = Date.n
 }
 
 export function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(new Date(value));
+  return dateTimeFormatter.format(new Date(value));
 }
 
 export function dayLabel(value: string) {
@@ -30,11 +50,7 @@ export function dayLabel(value: string) {
   if (date.toDateString() === today.toDateString()) return 'Today';
   if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
 
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric'
-  }).format(date);
+  return dayLabelFormatter.format(date);
 }
 
 export function dayKey(value: string) {
@@ -42,11 +58,7 @@ export function dayKey(value: string) {
 }
 
 export function formatTime(value: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  }).format(new Date(value));
+  return timeFormatter.format(new Date(value));
 }
 
 export function toDateLocal(iso: string) {
@@ -87,9 +99,5 @@ export function dateInputToLocalStart(value: string) {
 }
 
 export function formatTitleDate(value: Date) {
-  return new Intl.DateTimeFormat(undefined, {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  }).format(value);
+  return titleDateFormatter.format(value);
 }

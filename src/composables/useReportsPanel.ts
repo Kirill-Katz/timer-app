@@ -23,6 +23,20 @@ type ReportBucket = {
   segments: BucketProjectSegment[];
 };
 
+const monthBucketFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  year: 'numeric'
+});
+
+const shortDateFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric'
+});
+
+const dayOnlyFormatter = new Intl.DateTimeFormat(undefined, {
+  day: 'numeric'
+});
+
 export function useReportsPanel(app: TimeTrackerAppContext) {
   const aggregation = ref<Aggregation>('day');
   const rangePreset = ref<PresetRange>('30d');
@@ -57,6 +71,16 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
   const resolvedCustomTo = computed(() => customTo.value || timelineEndDate.value);
   const selectedAggregationLabel = computed(() => aggregationOptions.find((option) => option.value === aggregation.value)?.label ?? 'Per day');
   const selectedRangeLabel = computed(() => rangeOptions.find((option) => option.value === rangePreset.value)?.label ?? 'Last 30 days');
+  const projectMetaById = computed(() => new Map(
+    app.projects.map((project, index) => [
+      project.id,
+      {
+        name: project.name,
+        color: normalizeProjectColor(project),
+        index
+      }
+    ])
+  ));
 
   const rangeBounds = computed(() => {
     const today = startOfLocalDay(new Date());
@@ -133,23 +157,12 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
       }
     }
 
-    const projectMeta = new Map<string, { name: string; color: string; index: number }>(
-      app.projects.map((project, index) => [
-        project.id,
-        {
-          name: project.name,
-          color: normalizeProjectColor(project),
-          index
-        }
-      ])
-    );
-
     const projectOrder = Array.from(projectTotals.entries())
       .sort((a, b) => {
         const totalDiff = b[1] - a[1];
         if (totalDiff !== 0) return totalDiff;
-        const projectA = projectMeta.get(a[0]);
-        const projectB = projectMeta.get(b[0]);
+        const projectA = projectMetaById.value.get(a[0]);
+        const projectB = projectMetaById.value.get(b[0]);
         if (projectA && projectB) return projectA.index - projectB.index;
         if (projectA) return -1;
         if (projectB) return 1;
@@ -165,7 +178,7 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
           .map((projectId) => {
             const ms = bucketProjects.get(projectId) ?? 0;
             if (!ms) return null;
-            const meta = projectMeta.get(projectId);
+            const meta = projectMetaById.value.get(projectId);
             return {
               projectId,
               projectName: meta?.name ?? 'Unknown project',
@@ -190,8 +203,8 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
   const chartData = computed<ChartData<'bar'>>(() => ({
     labels: reportSeries.value.buckets.map((bucket) => bucket.label),
     datasets: reportSeries.value.projectOrder.map((projectId, datasetIndex, projectIds) => {
-      const project = app.projects.find((entry) => entry.id === projectId);
-      const baseColor = normalizeProjectColor(project);
+      const project = projectMetaById.value.get(projectId);
+      const baseColor = project?.color ?? '#7ef2bc';
       return {
         label: project?.name ?? 'Unknown project',
         data: reportSeries.value.buckets.map((bucket) => bucket.segments.find((segment) => segment.projectId === projectId)?.hours ?? 0),
@@ -359,29 +372,18 @@ function addBucket(value: Date, mode: Aggregation) {
 
 function formatBucketLabel(value: Date, mode: Aggregation) {
   if (mode === 'month') {
-    return new Intl.DateTimeFormat(undefined, {
-      month: 'short',
-      year: 'numeric'
-    }).format(value);
+    return monthBucketFormatter.format(value);
   }
 
   if (mode === 'week') {
     const end = addDays(value, 6);
     const sameMonth = value.getMonth() === end.getMonth() && value.getFullYear() === end.getFullYear();
-    const startText = new Intl.DateTimeFormat(undefined, {
-      month: 'short',
-      day: 'numeric'
-    }).format(value);
-    const endText = new Intl.DateTimeFormat(undefined, sameMonth
-      ? { day: 'numeric' }
-      : { month: 'short', day: 'numeric' }).format(end);
+    const startText = shortDateFormatter.format(value);
+    const endText = sameMonth ? dayOnlyFormatter.format(end) : shortDateFormatter.format(end);
     return `${startText} - ${endText}`;
   }
 
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric'
-  }).format(value);
+  return shortDateFormatter.format(value);
 }
 
 function roundHours(value: number) {

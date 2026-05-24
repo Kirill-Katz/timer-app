@@ -34,6 +34,7 @@ type AppHistoryState = {
 };
 
 export function useTimeTrackerApp() {
+  const INITIAL_MOBILE_TIMELINE_PAGE_SIZE = 80;
   const MOBILE_TIMELINE_PAGE_SIZE = 50;
   const APP_HISTORY_MARKER = '__timeTrackerNavigation';
 
@@ -106,15 +107,41 @@ export function useTimeTrackerApp() {
     void syncBootstrapData(userId.value, false);
   };
 
-  const selectedProject = computed(() => projects.value.find((project) => project.id === selectedProjectId.value));
-  const taskSheetProject = computed(() => projects.value.find((project) => project.id === taskSheetProjectId.value));
-  const projectLogDetailProject = computed(() => projects.value.find((project) => project.id === projectLogDetailProjectId.value));
+  const projectMap = computed(() => new Map(projects.value.map((project) => [project.id, project])));
+  const taskMap = computed(() => {
+    const nextMap = new Map<string, Task>();
+    allTasks.value.forEach((task) => {
+      nextMap.set(task.id, task);
+    });
+    tasks.value.forEach((task) => {
+      if (!nextMap.has(task.id)) {
+        nextMap.set(task.id, task);
+      }
+    });
+    return nextMap;
+  });
+  const logMap = computed(() => new Map(logs.value.map((log) => [log.id, log])));
+  const archivedProjectIds = computed(() => {
+    const archived = new Set<string>();
+    projectMap.value.forEach((project, projectId) => {
+      if (project.archived) {
+        archived.add(projectId);
+      }
+    });
+    return archived;
+  });
+
+  const selectedProject = computed(() => projectMap.value.get(selectedProjectId.value));
+  const taskSheetProject = computed(() => taskSheetProjectId.value ? projectMap.value.get(taskSheetProjectId.value) : undefined);
+  const projectLogDetailProject = computed(() => projectLogDetailProjectId.value ? projectMap.value.get(projectLogDetailProjectId.value) : undefined);
   const taskSheetTasks = computed(() => sortTasksByStatus(allTasks.value.filter((task) => task.project_id === taskSheetProjectId.value && (includeArchived.value || !task.archived))));
   const activeTasks = computed(() => sortTasksByStatus(tasks.value.filter((task) => includeArchived.value || !task.archived)));
   const logFormTasks = computed(() => sortTasksByStatus(allTasks.value.filter((task) => task.project_id === logForm.project_id && (includeArchived.value || !task.archived))));
-  const visibleLogs = computed(() => logs.value.filter((log) => includeArchived.value || !projectById(log.project_id)?.archived));
+  const visibleLogs = computed(() => includeArchived.value
+    ? logs.value
+    : logs.value.filter((log) => !archivedProjectIds.value.has(log.project_id)));
   const canStartTimer = computed(() => Boolean(userId.value && selectedProjectId.value && !runningLog.value));
-  const currentEditingLog = computed(() => editingLogId.value ? logs.value.find((log) => log.id === editingLogId.value) : undefined);
+  const currentEditingLog = computed(() => editingLogId.value ? logMap.value.get(editingLogId.value) : undefined);
   let historyReady = false;
   let restoringHistory = false;
   let historyRestoreSequence = 0;
@@ -488,7 +515,7 @@ export function useTimeTrackerApp() {
     hasMoreLogs.value = true;
     loadingMoreLogs.value = false;
 
-    const page = await listTimeLogsPage(userId.value, 0, MOBILE_TIMELINE_PAGE_SIZE);
+    const page = await listTimeLogsPage(userId.value, 0, INITIAL_MOBILE_TIMELINE_PAGE_SIZE);
     logs.value = page;
     logOffset.value = page.length;
     hasMoreLogs.value = logOffset.value < totalLogCount.value;
@@ -866,9 +893,6 @@ export function useTimeTrackerApp() {
 
   function openLogEditor(log: TimeLog, historyMode: HistorySyncMode = 'push') {
     previousMobileScreen.value = detailGroup.value ? 'detail' : settingsOpen.value ? 'settings' : reportsOpen.value ? 'reports' : calendarOpen.value ? 'calendar' : 'main';
-    reportsOpen.value = false;
-    settingsOpen.value = false;
-    calendarOpen.value = false;
     resetSheets();
     editingLogId.value = log.id;
     populateLogForm(log);
@@ -1146,12 +1170,12 @@ export function useTimeTrackerApp() {
   }
 
   function projectById(id: string) {
-    return projects.value.find((project) => project.id === id);
+    return projectMap.value.get(id);
   }
 
   function taskById(id: string | null) {
     if (!id) return undefined;
-    return allTasks.value.find((task) => task.id === id) ?? tasks.value.find((task) => task.id === id);
+    return taskMap.value.get(id);
   }
 
   function formatDuration(start: string, end: string | null) {

@@ -10,7 +10,7 @@ export function sortTasksByStatus(taskList: Task[]) {
 }
 
 export function sortLogsDesc(logList: TimeLog[]) {
-  return logList.slice().sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+  return logList.slice().sort((a, b) => Date.parse(b.start_time) - Date.parse(a.start_time));
 }
 
 export function updateDurationTotal(totals: Record<string, number>, key: string | null, deltaMs: number) {
@@ -30,8 +30,12 @@ export function updateDurationTotal(totals: Record<string, number>, key: string 
 
 export function buildGroupedLogs(logList: TimeLog[], logDurationMs: (log: TimeLog) => number): GroupedLogSection[] {
   const groups = new Map<string, { totalMs: number; entries: Map<string, GroupedLogEntry> }>();
+  const dayLabelCache = new Map<string, string>();
+  const timestampCache = new Map<string, number>();
+
   logList.forEach((log) => {
-    const label = dayLabel(log.start_time);
+    const label = dayLabelCache.get(log.start_time) ?? dayLabel(log.start_time);
+    dayLabelCache.set(log.start_time, label);
     const group = groups.get(label) ?? { totalMs: 0, entries: new Map<string, GroupedLogEntry>() };
     const duration = logDurationMs(log);
     const key = `${log.project_id}:${log.task_id ?? 'none'}`;
@@ -43,7 +47,11 @@ export function buildGroupedLogs(logList: TimeLog[], logDurationMs: (log: TimeLo
     };
 
     entry.totalMs += duration;
-    if (new Date(log.start_time).getTime() > new Date(entry.latestStart).getTime()) {
+    const logStartMs = timestampCache.get(log.start_time) ?? Date.parse(log.start_time);
+    timestampCache.set(log.start_time, logStartMs);
+    const entryStartMs = timestampCache.get(entry.latestStart) ?? Date.parse(entry.latestStart);
+    timestampCache.set(entry.latestStart, entryStartMs);
+    if (logStartMs > entryStartMs) {
       entry.latestStart = log.start_time;
     }
     group.totalMs += duration;
@@ -54,6 +62,12 @@ export function buildGroupedLogs(logList: TimeLog[], logDurationMs: (log: TimeLo
   return Array.from(groups.entries(), ([label, group]) => ({
     label,
     totalMs: group.totalMs,
-    entries: Array.from(group.entries.values()).sort((a, b) => new Date(b.latestStart).getTime() - new Date(a.latestStart).getTime())
+    entries: Array.from(group.entries.values()).sort((a, b) => {
+      const left = timestampCache.get(a.latestStart) ?? Date.parse(a.latestStart);
+      const right = timestampCache.get(b.latestStart) ?? Date.parse(b.latestStart);
+      timestampCache.set(a.latestStart, left);
+      timestampCache.set(b.latestStart, right);
+      return right - left;
+    })
   }));
 }

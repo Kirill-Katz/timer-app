@@ -59,15 +59,24 @@
   min-height: 0;
 }
 
+.project-swipe-row {
+  contain: layout paint;
+}
+
+.project-swipe-card {
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+}
+
 .calendar-board {
   min-width: 0;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
   overscroll-behavior-x: contain;
-  overscroll-behavior-y: none;
+  overscroll-behavior-y: contain;
   overflow-anchor: none;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x pinch-zoom;
+  touch-action: pan-x pan-y;
   scrollbar-width: thin;
 }
 

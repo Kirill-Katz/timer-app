@@ -27,24 +27,28 @@ defineProps<{
   <section class="mx-auto hidden max-w-7xl gap-4 sm:grid lg:grid-cols-[19rem_1fr]">
     <DesktopProjectSidebar :app="app" />
 
-    <DesktopPagePanel v-if="app.calendarOpen" title="Calendar" @back="app.closeCalendar">
-      <CalendarPanel :app="app" />
-    </DesktopPagePanel>
+    <section class="relative min-h-0">
+      <DesktopPagePanel v-if="app.calendarOpen" title="Calendar" @back="app.closeCalendar">
+        <CalendarPanel :app="app" />
+      </DesktopPagePanel>
 
-    <DesktopPagePanel v-else-if="app.reportsOpen" title="Reports" @back="app.closeReports">
-      <ReportsPanel :app="app" />
-    </DesktopPagePanel>
+      <DesktopPagePanel v-else-if="app.reportsOpen" title="Reports" @back="app.closeReports">
+        <ReportsPanel :app="app" />
+      </DesktopPagePanel>
 
-    <DesktopPagePanel v-else-if="app.settingsOpen" title="Settings" @back="app.closeSettings">
-      <SettingsPanel :app="app" />
-    </DesktopPagePanel>
+      <DesktopPagePanel v-else-if="app.settingsOpen" title="Settings" @back="app.closeSettings">
+        <SettingsPanel :app="app" />
+      </DesktopPagePanel>
 
-    <DesktopLogEditor v-else-if="app.editingLogId" :app="app" />
+      <section v-else class="grid gap-4 xl:grid-cols-2">
+        <DesktopTimerPanel :app="app" />
+        <DesktopTasksPanel :app="app" />
+        <DesktopLogsPanel :app="app" />
+      </section>
 
-    <section v-else class="grid gap-4 xl:grid-cols-2">
-      <DesktopTimerPanel :app="app" />
-      <DesktopTasksPanel :app="app" />
-      <DesktopLogsPanel :app="app" />
+      <div v-if="app.editingLogId" class="absolute inset-0 z-20">
+        <DesktopLogEditor :app="app" />
+      </div>
     </section>
   </section>
 </template>

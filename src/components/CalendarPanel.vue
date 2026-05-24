@@ -11,9 +11,18 @@ const INITIAL_PAST_DAYS = 7;
 const INITIAL_FUTURE_DAYS = 14;
 const DEFAULT_HOUR_HEIGHT_PX = 46;
 const MIN_HOUR_HEIGHT_PX = 24;
+const MAX_VERTICAL_ZOOM = 3;
+const MIN_VERTICAL_ZOOM = 1;
 const DAY_HEADER_HEIGHT_PX = 48;
 const CALENDAR_BOTTOM_GAP_PX = 8;
 const MOBILE_BOTTOM_BAR_HEIGHT_PX = 76;
+const weekdayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
+const dayCaptionFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const hourLabelFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false
+});
 
 type CalendarSegment = {
   id: string;
@@ -22,8 +31,8 @@ type CalendarSegment = {
   color: string;
   startMs: number;
   endMs: number;
-  top: number;
-  height: number;
+  startHour: number;
+  durationHours: number;
   lane: number;
   laneCount: number;
   isRunning: boolean;
@@ -46,10 +55,17 @@ const viewportRef = ref<HTMLElement | null>(null);
 const daysRef = ref<HTMLElement | null>(null);
 const rangeStart = ref<Date>(new Date());
 const rangeEnd = ref<Date>(new Date());
-const hourHeightPx = ref(DEFAULT_HOUR_HEIGHT_PX);
+const fittedHourHeightPx = ref(DEFAULT_HOUR_HEIGHT_PX);
+const verticalZoom = ref(1);
 const boardHeightPx = ref((DEFAULT_HOUR_HEIGHT_PX * HOURS_PER_DAY) + DAY_HEADER_HEIGHT_PX);
 let restoringScroll = false;
 let edgeLoadLock: 'past' | 'future' | null = null;
+let pinchStartDistance = 0;
+let pinchStartZoom = MIN_VERTICAL_ZOOM;
+let zoomRestoreToken = 0;
+
+const hourHeightPx = computed(() => fittedHourHeightPx.value * verticalZoom.value);
+const zoomPercentLabel = computed(() => `${Math.round(verticalZoom.value * 100)}%`);
 
 type ScrollAnchor = {
   dayKey: string;
@@ -148,8 +164,8 @@ function buildSegmentsForDay(dayStart: Date, logs: TimeLog[]) {
 
     const clippedStart = Math.max(startMs, dayStartMs);
     const clippedEnd = Math.min(endMs, dayEndMs);
-    const top = ((clippedStart - dayStartMs) / 3_600_000) * hourHeightPx.value;
-    const height = Math.max(14, ((clippedEnd - clippedStart) / 3_600_000) * hourHeightPx.value);
+    const startHour = (clippedStart - dayStartMs) / 3_600_000;
+    const durationHours = (clippedEnd - clippedStart) / 3_600_000;
 
     return [{
       id: `${log.id}:${formatDayKey(dayStart)}`,
@@ -158,8 +174,8 @@ function buildSegmentsForDay(dayStart: Date, logs: TimeLog[]) {
       color: eventColor(log),
       startMs: clippedStart,
       endMs: clippedEnd,
-      top,
-      height,
+      startHour,
+      durationHours,
       lane: 0,
       laneCount: 1,
       isRunning: !log.end_time
@@ -177,8 +193,8 @@ function createCalendarDay(dayStart: Date, logs: TimeLog[] = activeLogs.value) {
   const todayKey = formatDayKey(startOfDay(new Date()));
   return {
     key: formatDayKey(dayStart),
-    label: new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(dayStart),
-    caption: new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(dayStart),
+    label: weekdayFormatter.format(dayStart),
+    caption: dayCaptionFormatter.format(dayStart),
     isToday: formatDayKey(dayStart) === todayKey,
     segments: buildSegmentsForDay(dayStart, logs)
   } satisfies CalendarDay;
@@ -215,15 +231,10 @@ function updateCalendarMetrics() {
     MIN_HOUR_HEIGHT_PX,
     DEFAULT_HOUR_HEIGHT_PX
   );
-  const nextBoardHeight = DAY_HEADER_HEIGHT_PX + (nextHourHeight * HOURS_PER_DAY);
-  const metricsChanged = nextHourHeight !== hourHeightPx.value || nextBoardHeight !== boardHeightPx.value;
+  const nextBoardHeight = availableHeight;
 
-  hourHeightPx.value = nextHourHeight;
+  fittedHourHeightPx.value = nextHourHeight;
   boardHeightPx.value = nextBoardHeight;
-
-  if (metricsChanged && days.value.length) {
-    rebuildDays();
-  }
 }
 
 const calendarBoardStyle = computed<CSSProperties>(() => ({
@@ -236,15 +247,19 @@ const calendarBoardStyle = computed<CSSProperties>(() => ({
 const hourLabels = Array.from({ length: HOURS_PER_DAY }, (_, hour) => {
   const date = new Date();
   date.setHours(hour, 0, 0, 0);
-  return new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  }).format(date);
+  return hourLabelFormatter.format(date);
 });
 
 function openLog(log: TimeLog) {
   props.app.openLogEditor(log);
+}
+
+function segmentHeightPx(segment: CalendarSegment) {
+  return Math.max(14, segment.durationHours * hourHeightPx.value);
+}
+
+function segmentTopPx(segment: CalendarSegment) {
+  return segment.startHour * hourHeightPx.value;
 }
 
 function dayWidthPx() {
@@ -288,6 +303,86 @@ function scrollToAnchorDay() {
   const targetIndex = INITIAL_PAST_DAYS;
   viewportRef.value.scrollLeft = targetIndex * dayWidthPx();
   edgeLoadLock = null;
+}
+
+async function setVerticalZoom(nextZoom: number, anchorClientY?: number) {
+  const viewport = viewportRef.value;
+  const normalizedZoom = clamp(nextZoom, MIN_VERTICAL_ZOOM, MAX_VERTICAL_ZOOM);
+  if (Math.abs(normalizedZoom - verticalZoom.value) < 0.001) return;
+  const restoreToken = ++zoomRestoreToken;
+
+  let anchorOffset = DAY_HEADER_HEIGHT_PX;
+  let hourRatio = 0;
+
+  if (viewport) {
+    const viewportTop = viewport.getBoundingClientRect().top;
+    anchorOffset = clamp(anchorClientY ?? (viewportTop + (viewport.clientHeight / 2)) - viewportTop, DAY_HEADER_HEIGHT_PX, viewport.clientHeight);
+    const contentAnchor = Math.max(0, viewport.scrollTop + anchorOffset - DAY_HEADER_HEIGHT_PX);
+    hourRatio = contentAnchor / hourHeightPx.value;
+  }
+
+  verticalZoom.value = normalizedZoom;
+  await nextTick();
+  if (restoreToken !== zoomRestoreToken) return;
+
+  if (viewport) {
+    const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    const nextScrollTop = (hourRatio * hourHeightPx.value) - anchorOffset + DAY_HEADER_HEIGHT_PX;
+    viewport.scrollTop = Math.min(Math.max(0, nextScrollTop), maxScrollTop);
+  }
+}
+
+function pinchDistance(event: TouchEvent) {
+  const firstTouch = event.touches.item(0);
+  const secondTouch = event.touches.item(1);
+  if (!firstTouch || !secondTouch) return 0;
+  return Math.hypot(secondTouch.clientX - firstTouch.clientX, secondTouch.clientY - firstTouch.clientY);
+}
+
+function pinchAnchorClientY(event: TouchEvent) {
+  const firstTouch = event.touches.item(0);
+  const secondTouch = event.touches.item(1);
+  if (!firstTouch || !secondTouch) return undefined;
+  return (firstTouch.clientY + secondTouch.clientY) / 2;
+}
+
+function beginPinchZoom(event: TouchEvent) {
+  if (event.touches.length !== 2) return;
+  pinchStartDistance = pinchDistance(event);
+  pinchStartZoom = verticalZoom.value;
+}
+
+function handleViewportTouchStart(event: TouchEvent) {
+  if (event.touches.length === 2) {
+    beginPinchZoom(event);
+  }
+}
+
+function handleViewportTouchMove(event: TouchEvent) {
+  if (event.touches.length !== 2 || pinchStartDistance <= 0) return;
+  event.preventDefault();
+  const nextDistance = pinchDistance(event);
+  if (!nextDistance) return;
+  const scale = nextDistance / pinchStartDistance;
+  void setVerticalZoom(pinchStartZoom * scale, pinchAnchorClientY(event));
+}
+
+function endPinchZoom() {
+  pinchStartDistance = 0;
+}
+
+function handleViewportTouchEnd(event: TouchEvent) {
+  if (event.touches.length === 2) {
+    beginPinchZoom(event);
+    return;
+  }
+  endPinchZoom();
+}
+
+function handleViewportWheel(event: WheelEvent) {
+  if (!event.ctrlKey && !event.metaKey) return;
+  event.preventDefault();
+  void setVerticalZoom(verticalZoom.value - (event.deltaY * 0.003), event.clientY);
 }
 
 async function adjustRange(direction: 'past' | 'future') {
@@ -392,21 +487,30 @@ watch(() => props.app.calendarOpen, (open) => {
 
 watch(activeLogs, (logs) => {
   rebuildDays(logs);
-}, { deep: true });
+});
 
 onBeforeUnmount(() => {
   restoringScroll = false;
+  endPinchZoom();
   window.removeEventListener('resize', updateCalendarMetrics);
 });
 </script>
 
 <template>
-  <section ref="panelRef" class="calendar-panel grid min-h-0">
+  <section ref="panelRef" class="calendar-panel relative grid min-h-0">
+    <div v-if="verticalZoom > 1.01" class="pointer-events-none absolute right-3 top-3 z-10 rounded-full border border-white/10 bg-black/45 px-2 py-1.5 text-xs font-medium text-stone-200 backdrop-blur">
+      <span class="min-w-10 text-right text-xs font-medium text-stone-200">{{ zoomPercentLabel }}</span>
+    </div>
     <div
       ref="viewportRef"
       class="calendar-board rounded-lg border border-line bg-panel/70 shadow-soft"
       :style="calendarBoardStyle"
       @scroll.passive="handleHorizontalScroll"
+      @touchstart="handleViewportTouchStart"
+      @touchmove="handleViewportTouchMove"
+      @touchend="handleViewportTouchEnd"
+      @touchcancel="endPinchZoom"
+      @wheel="handleViewportWheel"
     >
       <div class="calendar-board__layout">
         <div class="calendar-hours">
@@ -436,8 +540,8 @@ onBeforeUnmount(() => {
                   type="button"
                   :title="segment.title"
                   :style="{
-                    top: `${segment.top}px`,
-                    height: `${segment.height}px`,
+                    top: `${segmentTopPx(segment)}px`,
+                    height: `${segmentHeightPx(segment)}px`,
                     left: `calc(${(segment.lane / segment.laneCount) * 100}% + 0.2rem)`,
                     width: `calc(${100 / segment.laneCount}% - 0.4rem)`,
                     backgroundColor: segment.color,
@@ -445,8 +549,8 @@ onBeforeUnmount(() => {
                   }"
                   @click="openLog(segment.log)"
                 >
-                  <span v-if="segment.height >= 24" class="calendar-entry__title">{{ segment.title }}</span>
-                  <span v-if="segment.isRunning && segment.height >= 40" class="calendar-entry__meta">Running</span>
+                  <span v-if="segmentHeightPx(segment) >= 24" class="calendar-entry__title">{{ segment.title }}</span>
+                  <span v-if="segment.isRunning && segmentHeightPx(segment) >= 40" class="calendar-entry__meta">Running</span>
                 </button>
               </div>
             </div>
