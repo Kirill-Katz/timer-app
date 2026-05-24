@@ -1049,7 +1049,7 @@ export function useTimeTrackerApp() {
     });
   }
 
-  function openEditPicker(mode: 'project' | 'task', historyMode: HistorySyncMode = 'push') {
+  function openEditPicker(mode: 'project' | 'task', historyMode: HistorySyncMode = 'replace') {
     editPickerMode.value = mode;
     writeHistorySnapshot(historyMode);
   }
