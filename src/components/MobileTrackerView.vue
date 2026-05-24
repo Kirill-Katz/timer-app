@@ -131,7 +131,7 @@ watch(
       <ReportsPanel :app="app" mobile-heading />
     </MobilePageOverlay>
 
-    <MobilePageOverlay :show="app.calendarOpen" title="Calendar">
+    <MobilePageOverlay :show="app.calendarOpen" title="Calendar" content-class="pt-5 px-0 pb-0">
       <CalendarPanel :app="app" />
     </MobilePageOverlay>
 

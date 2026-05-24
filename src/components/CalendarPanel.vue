@@ -14,7 +14,7 @@ const MIN_HOUR_HEIGHT_PX = 24;
 const MAX_VERTICAL_ZOOM = 5;
 const MIN_VERTICAL_ZOOM = 1;
 const DAY_HEADER_HEIGHT_PX = 48;
-const CALENDAR_BOTTOM_GAP_PX = 8;
+const DESKTOP_CALENDAR_BOTTOM_GAP_PX = 8;
 const MOBILE_BOTTOM_BAR_HEIGHT_PX = 76;
 const MIN_SEGMENT_HEIGHT_PX = 1;
 const COMPACT_SEGMENT_HEIGHT_PX = 18;
@@ -223,10 +223,12 @@ function updateCalendarMetrics() {
   if (!panel || typeof window === 'undefined') return;
 
   const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-  const reservedBottomSpace = window.matchMedia('(max-width: 639px)').matches ? MOBILE_BOTTOM_BAR_HEIGHT_PX : 0;
+  const isMobile = window.matchMedia('(max-width: 639px)').matches;
+  const reservedBottomSpace = isMobile ? MOBILE_BOTTOM_BAR_HEIGHT_PX : 0;
+  const bottomGap = isMobile ? 0 : DESKTOP_CALENDAR_BOTTOM_GAP_PX;
   const availableHeight = Math.max(
     DAY_HEADER_HEIGHT_PX + (MIN_HOUR_HEIGHT_PX * HOURS_PER_DAY),
-    Math.floor(viewportHeight - panel.getBoundingClientRect().top - reservedBottomSpace - CALENDAR_BOTTOM_GAP_PX)
+    Math.floor(viewportHeight - panel.getBoundingClientRect().top - reservedBottomSpace - bottomGap)
   );
   const nextHourHeight = clamp(
     Math.floor((availableHeight - DAY_HEADER_HEIGHT_PX) / HOURS_PER_DAY),
@@ -509,7 +511,7 @@ onBeforeUnmount(() => {
     </div>
     <div
       ref="viewportRef"
-      class="calendar-board rounded-lg border border-line bg-panel/70 shadow-soft"
+      class="calendar-board rounded-none border border-line bg-panel/70 shadow-soft sm:rounded-lg"
       :style="calendarBoardStyle"
       @scroll.passive="handleHorizontalScroll"
       @touchstart="handleViewportTouchStart"
