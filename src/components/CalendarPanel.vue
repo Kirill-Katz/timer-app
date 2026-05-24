@@ -11,11 +11,13 @@ const INITIAL_PAST_DAYS = 7;
 const INITIAL_FUTURE_DAYS = 14;
 const DEFAULT_HOUR_HEIGHT_PX = 46;
 const MIN_HOUR_HEIGHT_PX = 24;
-const MAX_VERTICAL_ZOOM = 3;
+const MAX_VERTICAL_ZOOM = 5;
 const MIN_VERTICAL_ZOOM = 1;
 const DAY_HEADER_HEIGHT_PX = 48;
 const CALENDAR_BOTTOM_GAP_PX = 8;
 const MOBILE_BOTTOM_BAR_HEIGHT_PX = 76;
+const MIN_SEGMENT_HEIGHT_PX = 1;
+const COMPACT_SEGMENT_HEIGHT_PX = 18;
 const weekdayFormatter = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
 const dayCaptionFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 const hourLabelFormatter = new Intl.DateTimeFormat(undefined, {
@@ -255,11 +257,15 @@ function openLog(log: TimeLog) {
 }
 
 function segmentHeightPx(segment: CalendarSegment) {
-  return Math.max(14, segment.durationHours * hourHeightPx.value);
+  return Math.max(MIN_SEGMENT_HEIGHT_PX, segment.durationHours * hourHeightPx.value);
 }
 
 function segmentTopPx(segment: CalendarSegment) {
   return segment.startHour * hourHeightPx.value;
+}
+
+function isCompactSegment(segment: CalendarSegment) {
+  return segmentHeightPx(segment) < COMPACT_SEGMENT_HEIGHT_PX;
 }
 
 function dayWidthPx() {
@@ -537,6 +543,7 @@ onBeforeUnmount(() => {
                   v-for="segment in day.segments"
                   :key="segment.id"
                   class="calendar-entry"
+                  :class="{ 'calendar-entry--compact': isCompactSegment(segment) }"
                   type="button"
                   :title="segment.title"
                   :style="{

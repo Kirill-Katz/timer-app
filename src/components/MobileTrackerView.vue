@@ -127,8 +127,8 @@ watch(
     <MobileMenuSheet :app="app" />
     <MobileProjectsSheet :app="app" />
 
-    <MobilePageOverlay :show="app.reportsOpen" title="Reports">
-      <ReportsPanel :app="app" />
+    <MobilePageOverlay :show="app.reportsOpen" title="" content-class="py-5 pb-24">
+      <ReportsPanel :app="app" mobile-heading />
     </MobilePageOverlay>
 
     <MobilePageOverlay :show="app.calendarOpen" title="Calendar">

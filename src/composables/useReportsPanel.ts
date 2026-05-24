@@ -23,6 +23,15 @@ type ReportBucket = {
   segments: BucketProjectSegment[];
 };
 
+type ProjectBreakdownSegment = {
+  projectId: string;
+  projectName: string;
+  color: string;
+  ms: number;
+  hours: number;
+  share: number;
+};
+
 const monthBucketFormatter = new Intl.DateTimeFormat(undefined, {
   month: 'short',
   year: 'numeric'
@@ -42,13 +51,15 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
   const rangePreset = ref<PresetRange>('30d');
   const customFrom = ref('');
   const customTo = ref('');
-  const controlsOpen = ref(false);
-  const controlsRef = ref<HTMLElement | null>(null);
+  const periodMenuOpen = ref(false);
+  const aggregationMenuOpen = ref(false);
+  const periodMenuRef = ref<HTMLElement | null>(null);
+  const aggregationMenuRef = ref<HTMLElement | null>(null);
 
   const aggregationOptions: Array<{ value: Aggregation; label: string }> = [
-    { value: 'day', label: 'Per day' },
-    { value: 'week', label: 'Per week' },
-    { value: 'month', label: 'Per month' }
+    { value: 'day', label: 'Daily' },
+    { value: 'week', label: 'Weekly' },
+    { value: 'month', label: 'Monthly' }
   ];
 
   const rangeOptions: Array<{ value: PresetRange; label: string }> = [
@@ -82,7 +93,7 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
     ])
   ));
 
-  const rangeBounds = computed(() => {
+  const selectedRangeWindow = computed(() => {
     const today = startOfLocalDay(new Date());
     const tomorrow = addDays(today, 1);
     let start: Date;
@@ -111,9 +122,19 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
       endExclusive = tomorrow;
     }
 
-    const alignedStart = floorToBucket(start, aggregation.value);
+    return {
+      start,
+      endExclusive
+    };
+  });
+
+  const rangeBounds = computed(() => {
+    const window = selectedRangeWindow.value;
+    if (!window) return null;
+
+    const alignedStart = floorToBucket(window.start, aggregation.value);
     const alignedEndExclusive = addBucket(
-      floorToBucket(new Date(endExclusive.getTime() - 1), aggregation.value),
+      floorToBucket(new Date(window.endExclusive.getTime() - 1), aggregation.value),
       aggregation.value
     );
 
@@ -125,7 +146,7 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
 
   const reportSeries = computed(() => {
     const bounds = rangeBounds.value;
-    if (!bounds) return { buckets: [], projectOrder: [], totalMs: 0 };
+    if (!bounds) return { buckets: [], projectOrder: [], projectBreakdown: [], totalMs: 0 };
 
     const bucketStarts = buildBucketStarts(bounds.start, bounds.endExclusive, aggregation.value);
     const totals = new Map<number, number>(bucketStarts.map((date) => [date.getTime(), 0]));
@@ -196,30 +217,39 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
         } satisfies ReportBucket;
       }),
       projectOrder,
+      projectBreakdown: projectOrder.map((projectId) => {
+        const ms = projectTotals.get(projectId) ?? 0;
+        const meta = projectMetaById.value.get(projectId);
+        return {
+          projectId,
+          projectName: meta?.name ?? 'Unknown project',
+          color: meta?.color ?? '#7ef2bc',
+          ms,
+          hours: roundHours(ms / 3_600_000),
+          share: totalMs > 0 ? ms / totalMs : 0
+        } satisfies ProjectBreakdownSegment;
+      }),
       totalMs
     };
   });
 
   const chartData = computed<ChartData<'bar'>>(() => ({
     labels: reportSeries.value.buckets.map((bucket) => bucket.label),
-    datasets: reportSeries.value.projectOrder.map((projectId, datasetIndex, projectIds) => {
+    datasets: reportSeries.value.projectOrder.map((projectId) => {
       const project = projectMetaById.value.get(projectId);
       const baseColor = project?.color ?? '#7ef2bc';
+      const bucketValues = reportSeries.value.buckets.map((bucket) => bucket.segments.find((segment) => segment.projectId === projectId)?.hours ?? 0);
       return {
         label: project?.name ?? 'Unknown project',
-        data: reportSeries.value.buckets.map((bucket) => bucket.segments.find((segment) => segment.projectId === projectId)?.hours ?? 0),
+        data: bucketValues,
         backgroundColor: withAlpha(baseColor, 0.82),
         borderColor: withAlpha(baseColor, 1),
-        borderWidth: 1,
-        borderRadius: {
-          topLeft: datasetIndex === projectIds.length - 1 ? 8 : 0,
-          topRight: datasetIndex === projectIds.length - 1 ? 8 : 0,
-          bottomLeft: datasetIndex === 0 ? 8 : 0,
-          bottomRight: datasetIndex === 0 ? 8 : 0
-        },
+        borderWidth: 0,
         borderSkipped: false,
+        borderRadius: 0,
         hoverBackgroundColor: withAlpha(baseColor, 0.94),
         hoverBorderColor: withAlpha(baseColor, 1),
+        hoverBorderWidth: 0,
         maxBarThickness: 28,
         stack: 'tracked-hours'
       };
@@ -287,8 +317,53 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
     }
   }));
 
+  const donutData = computed<ChartData<'doughnut'>>(() => ({
+    labels: reportSeries.value.projectBreakdown.map((segment) => segment.projectName),
+    datasets: [{
+      data: reportSeries.value.projectBreakdown.map((segment) => segment.hours),
+      backgroundColor: reportSeries.value.projectBreakdown.map((segment) => withAlpha(segment.color, 0.9)),
+      borderColor: reportSeries.value.projectBreakdown.map((segment) => withAlpha(segment.color, 1)),
+      borderWidth: 1.5,
+      hoverOffset: 4,
+      spacing: 2
+    }]
+  }));
+
+  const donutOptions = computed<ChartOptions<'doughnut'>>(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '68%',
+    animation: {
+      duration: 240,
+      easing: 'easeOutCubic'
+    },
+    plugins: {
+      legend: {
+        display: false
+      },
+      tooltip: {
+        callbacks: {
+          label(context) {
+            const segment = reportSeries.value.projectBreakdown[context.dataIndex];
+            if (!segment) return context.label ?? '';
+            return `${segment.projectName}: ${app.formatDurationMs(segment.ms)} (${Math.round(segment.share * 100)}%)`;
+          }
+        }
+      }
+    }
+  }));
+
   const totalLabel = computed(() => app.formatDurationMs(reportSeries.value.totalMs));
+  const averageDailyTrackedMs = computed(() => {
+    const window = selectedRangeWindow.value;
+    if (!window) return 0;
+    const dayCount = Math.max(1, Math.round((window.endExclusive.getTime() - window.start.getTime()) / 86_400_000));
+    return Math.round(reportSeries.value.totalMs / dayCount);
+  });
+  const averageDailyTrackedLabel = computed(() => app.formatDurationMs(averageDailyTrackedMs.value));
   const hasData = computed(() => reportSeries.value.buckets.length > 0);
+  const hasBreakdown = computed(() => reportSeries.value.projectBreakdown.length > 0);
+  const projectBreakdown = computed(() => reportSeries.value.projectBreakdown);
   const hasLogs = computed(() => app.reportLogs.length > 0);
   const activeRangeTitle = computed(() => {
     const bounds = rangeBounds.value;
@@ -298,31 +373,97 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
     const endLabel = formatTitleDate(addDays(bounds.endExclusive, -1));
     return `${selectedRangeLabel.value} ${startLabel} - ${endLabel}`;
   });
-  const controlsSummary = computed(() => `${selectedAggregationLabel.value} • ${selectedRangeLabel.value}`);
+  const selectedPeriodButtonLabel = computed(() => {
+    if (rangePreset.value !== 'custom') return selectedRangeLabel.value;
+    if (!resolvedCustomFrom.value || !resolvedCustomTo.value) return 'Custom range';
+    return `${resolvedCustomFrom.value} - ${resolvedCustomTo.value}`;
+  });
 
-  onClickOutside(controlsRef, () => {
-    controlsOpen.value = false;
+  function syncCustomInputsToCurrentPeriod() {
+    const bounds = rangeBounds.value;
+    if (!bounds) {
+      customFrom.value = timelineStartDate.value;
+      customTo.value = timelineEndDate.value;
+      return;
+    }
+
+    customFrom.value = toDateInputValue(bounds.start);
+    customTo.value = toDateInputValue(addDays(bounds.endExclusive, -1));
+  }
+
+  function openPeriodMenu() {
+    if (!periodMenuOpen.value) {
+      syncCustomInputsToCurrentPeriod();
+    }
+    periodMenuOpen.value = !periodMenuOpen.value;
+    if (periodMenuOpen.value) {
+      aggregationMenuOpen.value = false;
+    }
+  }
+
+  function openAggregationMenu() {
+    aggregationMenuOpen.value = !aggregationMenuOpen.value;
+    if (aggregationMenuOpen.value) {
+      periodMenuOpen.value = false;
+    }
+  }
+
+  function applyRangePreset(nextRangePreset: PresetRange) {
+    rangePreset.value = nextRangePreset;
+    if (nextRangePreset !== 'custom') {
+      periodMenuOpen.value = false;
+    }
+  }
+
+  function applyCustomRange() {
+    rangePreset.value = 'custom';
+    periodMenuOpen.value = false;
+  }
+
+  function applyAggregation(nextAggregation: Aggregation) {
+    aggregation.value = nextAggregation;
+    aggregationMenuOpen.value = false;
+  }
+
+  onClickOutside(periodMenuRef, () => {
+    periodMenuOpen.value = false;
+  });
+
+  onClickOutside(aggregationMenuRef, () => {
+    aggregationMenuOpen.value = false;
   });
 
   return {
     aggregation,
     aggregationOptions,
     activeRangeTitle,
+    aggregationMenuOpen,
+    aggregationMenuRef,
+    averageDailyTrackedLabel,
+    applyAggregation,
+    applyCustomRange,
+    applyRangePreset,
     chartData,
     chartOptions,
-    controlsOpen,
-    controlsRef,
-    controlsSummary,
     customFrom,
     customTo,
+    donutData,
+    donutOptions,
+    hasBreakdown,
     hasData,
     hasLogs,
+    openAggregationMenu,
+    openPeriodMenu,
+    periodMenuOpen,
+    periodMenuRef,
+    projectBreakdown,
     rangeBounds,
     rangeOptions,
     rangePreset,
     resolvedCustomFrom,
     resolvedCustomTo,
     selectedAggregationLabel,
+    selectedPeriodButtonLabel,
     timelineEndDate,
     timelineStartDate,
     totalLabel

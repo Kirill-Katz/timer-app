@@ -14,7 +14,7 @@ withDefaults(defineProps<{
 
 <template>
   <MobileOverlay :show="show" :z-class="zClass" :content-class="contentClass">
-    <div class="mb-4">
+    <div v-if="title" class="mb-4">
       <h2 class="text-center text-xl font-medium">{{ title }}</h2>
     </div>
     <slot></slot>
