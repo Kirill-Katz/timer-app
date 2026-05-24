@@ -1,12 +1,59 @@
-import type { GroupedLogEntry, GroupedLogSection, Task, TimeLog } from '../types';
+import type { GroupedLogEntry, GroupedLogSection, Project, Task, TimeLog } from '../types';
 import { dayLabel } from './useDateTimeFormatters';
 
-export function compareTasks(a: Task, b: Task) {
-  return Number(Boolean(a.completed)) - Number(Boolean(b.completed)) || a.created_at.localeCompare(b.created_at);
+function compareActivityTimestampDesc(left: string | undefined, right: string | undefined) {
+  if (left && right && left !== right) {
+    return right.localeCompare(left);
+  }
+
+  if (left) return -1;
+  if (right) return 1;
+  return 0;
 }
 
-export function sortTasksByStatus(taskList: Task[]) {
-  return taskList.slice().sort(compareTasks);
+export function buildLatestStartMaps(logList: TimeLog[]) {
+  const projectLatestStartById = new Map<string, string>();
+  const taskLatestStartById = new Map<string, string>();
+
+  logList.forEach((log) => {
+    if (log.deleted_at) return;
+
+    const latestProjectStart = projectLatestStartById.get(log.project_id);
+    if (!latestProjectStart || log.start_time > latestProjectStart) {
+      projectLatestStartById.set(log.project_id, log.start_time);
+    }
+
+    if (log.task_id) {
+      const latestTaskStart = taskLatestStartById.get(log.task_id);
+      if (!latestTaskStart || log.start_time > latestTaskStart) {
+        taskLatestStartById.set(log.task_id, log.start_time);
+      }
+    }
+  });
+
+  return {
+    projectLatestStartById,
+    taskLatestStartById
+  };
+}
+
+export function sortProjectsByRecentActivity(projectList: Project[], latestStartById: Map<string, string> = new Map()) {
+  return projectList.slice().sort((a, b) => {
+    return Number(Boolean(a.archived)) - Number(Boolean(b.archived))
+      || compareActivityTimestampDesc(latestStartById.get(a.id), latestStartById.get(b.id))
+      || b.created_at.localeCompare(a.created_at);
+  });
+}
+
+export function compareTasks(a: Task, b: Task, latestStartById: Map<string, string> = new Map()) {
+  return Number(Boolean(a.completed)) - Number(Boolean(b.completed))
+    || Number(Boolean(a.archived)) - Number(Boolean(b.archived))
+    || compareActivityTimestampDesc(latestStartById.get(a.id), latestStartById.get(b.id))
+    || b.created_at.localeCompare(a.created_at);
+}
+
+export function sortTasksByStatus(taskList: Task[], latestStartById: Map<string, string> = new Map()) {
+  return taskList.slice().sort((a, b) => compareTasks(a, b, latestStartById));
 }
 
 export function sortLogsDesc(logList: TimeLog[]) {

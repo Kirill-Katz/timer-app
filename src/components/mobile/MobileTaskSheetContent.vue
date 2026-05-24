@@ -32,7 +32,7 @@ defineProps<{
     <button v-else class="btn-primary inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-4 font-medium" type="button" @click="app.openTaskCreate()">
       <Plus :size="18" /> Add a new task
     </button>
-    <VirtualScroller class="max-h-[40vh] pb-8" :items="app.taskSheetTasks" :item-height="64" item-key="id" :overscan="8">
+    <VirtualScroller class="max-h-[40vh] pb-8" :items="app.taskSheetTasks" :item-height="64" item-key="id" :overscan="4">
       <template #default="{ item: task }">
         <article class="grid h-full grid-cols-[2.25rem_1fr_auto] items-start gap-1.5 rounded-lg bg-panel px-2.5 py-1.5" :class="[task.archived ? 'opacity-55' : '', task.completed ? 'opacity-70' : '']">
           <button

@@ -2,9 +2,12 @@
 import { Play, Square } from 'lucide-vue-next';
 import type { TimeTrackerAppContext } from '../../composables/useTimeTrackerApp';
 
-defineProps<{
+withDefaults(defineProps<{
   app: TimeTrackerAppContext;
-}>();
+  liveTimer?: boolean;
+}>(), {
+  liveTimer: true
+});
 </script>
 
 <template>
@@ -22,7 +25,7 @@ defineProps<{
           <p class="truncate text-sm font-normal text-stone-300">{{ app.taskById(app.runningLog.task_id)?.name ?? 'No task' }}</p>
         </button>
         <button class="btn-danger inline-flex h-11 w-32 items-center justify-center gap-2 rounded-xl px-4 font-medium tabular-nums" type="button" @click="app.endTimer">
-          <Square :size="18" /> {{ app.formatDuration(app.runningLog.start_time, null) }}
+          <Square :size="18" /> {{ liveTimer ? app.formatDuration(app.runningLog.start_time, null) : 'Tracking' }}
         </button>
       </div>
     </div>

@@ -148,6 +148,7 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
     const bounds = rangeBounds.value;
     if (!bounds) return { buckets: [], projectOrder: [], projectBreakdown: [], totalMs: 0 };
 
+    const nowMs = app.runningLog ? app.ticker : 0;
     const bucketStarts = buildBucketStarts(bounds.start, bounds.endExclusive, aggregation.value);
     const totals = new Map<number, number>(bucketStarts.map((date) => [date.getTime(), 0]));
     const projectTotals = new Map<string, number>();
@@ -157,7 +158,7 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
     let totalMs = 0;
 
     for (const log of app.reportLogs) {
-      const clipped = clipLogToRange(log, bounds.start.getTime(), bounds.endExclusive.getTime(), app.ticker);
+      const clipped = clipLogToRange(log, bounds.start.getTime(), bounds.endExclusive.getTime(), nowMs);
       if (!clipped) continue;
 
       totalMs += clipped.end - clipped.start;
@@ -237,9 +238,10 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
     const window = selectedRangeWindow.value;
     if (!window) return 0;
 
+    const nowMs = app.runningLog ? app.ticker : 0;
     let totalMs = 0;
     for (const log of app.reportLogs) {
-      const clipped = clipLogToRange(log, window.start.getTime(), window.endExclusive.getTime(), app.ticker);
+      const clipped = clipLogToRange(log, window.start.getTime(), window.endExclusive.getTime(), nowMs);
       if (!clipped) continue;
       totalMs += clipped.end - clipped.start;
     }
@@ -485,7 +487,7 @@ export function useReportsPanel(app: TimeTrackerAppContext) {
 
 function clipLogToRange(log: TimeLog, rangeStart: number, rangeEnd: number, nowMs: number) {
   const logStart = new Date(log.start_time).getTime();
-  const logEnd = log.end_time ? new Date(log.end_time).getTime() : nowMs;
+  const logEnd = log.end_time ? new Date(log.end_time).getTime() : nowMs || Date.now();
   const start = Math.max(logStart, rangeStart);
   const end = Math.min(logEnd, rangeEnd);
   if (end <= start) return null;

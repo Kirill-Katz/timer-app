@@ -21,7 +21,7 @@ useBodyScrollLock(() => props.show);
 
 <template>
   <Transition enter-active-class="transition duration-0 ease-linear" enter-from-class="opacity-100" enter-to-class="opacity-100" leave-active-class="transition duration-0 ease-linear" leave-from-class="opacity-100" leave-to-class="opacity-100">
-    <div v-if="show" class="fixed inset-0 bg-black/20" :class="zClass" @click="emit('close')" @wheel.self.prevent @touchmove.self.prevent>
+    <div v-if="show" class="fixed inset-0 bg-black/20 backdrop-blur-[2px]" :class="zClass" @click="emit('close')" @wheel.self.prevent @touchmove.self.prevent>
       <div
         class="absolute inset-x-0 bottom-0 rounded-t-3xl border border-line bg-panel p-4 shadow-soft transition duration-0 ease-linear"
         :class="[minHeightClass, contentClass]"

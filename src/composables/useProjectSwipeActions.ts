@@ -1,115 +1,70 @@
-const MAX_SWIPE_REVEAL_PX = 120;
-const OPEN_TASKS_SWIPE_THRESHOLD_PX = 16;
-const FAST_SWIPE_THRESHOLD_PX = 10;
-const FAST_SWIPE_VELOCITY_PX_PER_MS = 0.35;
-const SWIPE_FOLLOW_MULTIPLIER = 1.35;
-const SWIPE_RESET_DURATION_MS = 120;
+import { onUnmounted } from 'vue';
 
-export function useProjectSwipeActions(openProjectTasks: (projectId: string) => void) {
-  let swipeStartX = 0;
-  let swipeStartY = 0;
-  let swipeStartTime = 0;
-  let swipingProjectId: string | null = null;
-  let swipeCardElement: HTMLElement | null = null;
-  let frameId = 0;
-  let pendingOffsetX = 0;
-  let swipingHorizontally = false;
+const OPEN_TASKS_SCROLL_THRESHOLD_PX = 150;
+const SWIPE_RESET_DELAY_MS = 120;
+const SWIPE_CLICK_SUPPRESS_MS = 400;
 
-  function queueSwipeOffset(offsetX: number) {
-    pendingOffsetX = offsetX;
-    if (frameId) return;
+export function useProjectSwipeActions(
+  openProjectTasks: (projectId: string) => void,
+  openProjectLogDetail: (projectId: string) => void
+) {
+  let resetTimer: number | undefined;
+  let openedProjectId: string | null = null;
+  let suppressedClickProjectId: string | null = null;
+  let suppressClickUntil = 0;
 
-    frameId = requestAnimationFrame(() => {
-      frameId = 0;
-      if (!swipeCardElement) return;
-      swipeCardElement.style.transform = `translate3d(${pendingOffsetX}px, 0, 0)`;
-    });
+  function clearResetTimer() {
+    if (!resetTimer) return;
+    window.clearTimeout(resetTimer);
+    resetTimer = undefined;
   }
 
-  function resetSwipeCard(animate: boolean) {
-    if (frameId) {
-      cancelAnimationFrame(frameId);
-      frameId = 0;
-    }
-
-    if (!swipeCardElement) return;
-
-    swipeCardElement.style.transitionDuration = animate ? `${SWIPE_RESET_DURATION_MS}ms` : '0ms';
-    swipeCardElement.style.transform = 'translate3d(0px, 0, 0)';
-    swipeCardElement.style.willChange = animate ? 'auto' : 'transform';
+  function scheduleReset(row: HTMLElement) {
+    clearResetTimer();
+    resetTimer = window.setTimeout(() => {
+      resetTimer = undefined;
+      row.scrollLeft = 0;
+    }, SWIPE_RESET_DELAY_MS);
   }
 
-  function clearSwipeState() {
-    swipingProjectId = null;
-    swipeCardElement = null;
-    swipeStartTime = 0;
-    swipingHorizontally = false;
-  }
+  function handleProjectSwipeScroll(event: Event, projectId: string) {
+    const row = event.currentTarget as HTMLElement | null;
+    if (!row || openedProjectId === projectId) return;
 
-  function handleProjectSwipeStart(event: TouchEvent) {
-    swipeStartX = event.touches[0]?.clientX ?? 0;
-    swipeStartY = event.touches[0]?.clientY ?? 0;
-    swipeStartTime = event.timeStamp;
-    swipingProjectId = (event.currentTarget as HTMLElement | null)?.dataset.projectId ?? null;
-    swipeCardElement = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>('[data-swipe-card]') ?? null;
-    swipingHorizontally = false;
-    if (swipeCardElement) {
-      swipeCardElement.style.transitionDuration = '0ms';
-      swipeCardElement.style.willChange = 'transform';
-    }
-    queueSwipeOffset(0);
-  }
-
-  function handleProjectSwipeMove(event: TouchEvent, projectId: string) {
-    const touch = event.touches[0];
-    if (!touch || swipingProjectId !== projectId) return;
-
-    const deltaX = touch.clientX - swipeStartX;
-    const deltaY = touch.clientY - swipeStartY;
-    if (!swipingHorizontally && deltaX < 0 && Math.abs(deltaX) > Math.abs(deltaY) + 4) {
-      swipingHorizontally = true;
-    }
-
-    if (swipingHorizontally) {
-      event.preventDefault();
-    }
-
-    if (deltaX < 0 && Math.abs(deltaY) < 45) {
-      queueSwipeOffset(Math.max(deltaX * SWIPE_FOLLOW_MULTIPLIER, -MAX_SWIPE_REVEAL_PX));
-    }
-  }
-
-  function handleProjectSwipeEnd(event: TouchEvent, projectId: string) {
-    const touch = event.changedTouches[0];
-    if (!touch || swipingProjectId !== projectId) {
-      resetSwipeCard(true);
-      clearSwipeState();
+    if (row.scrollLeft >= OPEN_TASKS_SCROLL_THRESHOLD_PX) {
+      clearResetTimer();
+      openedProjectId = projectId;
+      suppressedClickProjectId = projectId;
+      suppressClickUntil = performance.now() + SWIPE_CLICK_SUPPRESS_MS;
+      openProjectTasks(projectId);
+      row.scrollLeft = 0;
+      window.setTimeout(() => {
+        if (openedProjectId === projectId) {
+          openedProjectId = null;
+        }
+      }, SWIPE_CLICK_SUPPRESS_MS);
       return;
     }
 
-    const deltaX = touch.clientX - swipeStartX;
-    const deltaY = touch.clientY - swipeStartY;
-    const elapsedMs = Math.max(event.timeStamp - swipeStartTime, 1);
-    const swipeVelocity = Math.abs(deltaX) / elapsedMs;
-    const crossedDistanceThreshold = deltaX < -OPEN_TASKS_SWIPE_THRESHOLD_PX;
-    const crossedFastSwipeThreshold = deltaX < -FAST_SWIPE_THRESHOLD_PX && swipeVelocity >= FAST_SWIPE_VELOCITY_PX_PER_MS;
+    scheduleReset(row);
+  }
 
-    if ((crossedDistanceThreshold || crossedFastSwipeThreshold) && Math.abs(deltaY) < 35) {
-      openProjectTasks(projectId);
+  function handleProjectCardClick(projectId: string) {
+    if (suppressedClickProjectId === projectId && performance.now() <= suppressClickUntil) {
+      return;
     }
-    resetSwipeCard(true);
-    clearSwipeState();
+
+    if (suppressedClickProjectId === projectId) {
+      suppressedClickProjectId = null;
+    }
+
+    openProjectLogDetail(projectId);
   }
 
-  function handleProjectSwipeCancel() {
-    resetSwipeCard(true);
-    clearSwipeState();
-  }
+  onUnmounted(clearResetTimer);
 
   return {
-    handleProjectSwipeStart,
-    handleProjectSwipeMove,
-    handleProjectSwipeEnd,
-    handleProjectSwipeCancel
+    handleProjectSwipeScroll,
+    handleProjectCardClick
   };
 }

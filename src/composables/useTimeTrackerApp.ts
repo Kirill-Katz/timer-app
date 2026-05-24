@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, proxyRefs, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, proxyRefs, reactive, ref, watch } from 'vue';
 import { supabase, getCurrentUserId, handleAuthRedirect } from '../services/supabase';
 import { completedTimeLogDurationMs, timeLogDurationMs } from './useTimeLogDuration';
 import { hasLogAggregates, rebuildLogAggregates } from '../services/log-aggregates';
@@ -9,7 +9,7 @@ import { countProjectTimeLogs, countTimeLogs, getRunningLog, listProjectTimeLogs
 import type { DetailGroup, GroupedLogSection, Project, Task, TimeLog } from '../types';
 import { dayKey, formatDateTime, formatDuration as formatTimeLogDuration, formatDurationMs, formatTime, fromDateAndTimeLocal, toDateLocal, toTimeLocal } from './useDateTimeFormatters';
 import { useProjectSwipeActions } from './useProjectSwipeActions';
-import { buildGroupedLogs, sortLogsDesc, sortTasksByStatus, updateDurationTotal } from './useTimeTrackerDerivations';
+import { buildGroupedLogs, buildLatestStartMaps, sortLogsDesc, sortProjectsByRecentActivity, sortTasksByStatus, updateDurationTotal } from './useTimeTrackerDerivations';
 
 type PreviousMobileScreen = 'main' | 'detail' | 'settings' | 'reports' | 'calendar';
 type HistorySyncMode = 'push' | 'replace' | 'none';
@@ -107,6 +107,20 @@ export function useTimeTrackerApp() {
     void syncBootstrapData(userId.value, false);
   };
 
+  function startTicker() {
+    if (timerInterval) return;
+    ticker.value = Date.now();
+    timerInterval = window.setInterval(() => {
+      ticker.value = Date.now();
+    }, 1_000);
+  }
+
+  function stopTicker() {
+    if (!timerInterval) return;
+    window.clearInterval(timerInterval);
+    timerInterval = undefined;
+  }
+
   const projectMap = computed(() => new Map(projects.value.map((project) => [project.id, project])));
   const taskMap = computed(() => {
     const nextMap = new Map<string, Task>();
@@ -134,9 +148,9 @@ export function useTimeTrackerApp() {
   const selectedProject = computed(() => projectMap.value.get(selectedProjectId.value));
   const taskSheetProject = computed(() => taskSheetProjectId.value ? projectMap.value.get(taskSheetProjectId.value) : undefined);
   const projectLogDetailProject = computed(() => projectLogDetailProjectId.value ? projectMap.value.get(projectLogDetailProjectId.value) : undefined);
-  const taskSheetTasks = computed(() => sortTasksByStatus(allTasks.value.filter((task) => task.project_id === taskSheetProjectId.value && (includeArchived.value || !task.archived))));
-  const activeTasks = computed(() => sortTasksByStatus(tasks.value.filter((task) => includeArchived.value || !task.archived)));
-  const logFormTasks = computed(() => sortTasksByStatus(allTasks.value.filter((task) => task.project_id === logForm.project_id && (includeArchived.value || !task.archived))));
+  const taskSheetTasks = computed(() => allTasks.value.filter((task) => task.project_id === taskSheetProjectId.value && (includeArchived.value || !task.archived)));
+  const activeTasks = computed(() => tasks.value.filter((task) => includeArchived.value || !task.archived));
+  const logFormTasks = computed(() => allTasks.value.filter((task) => task.project_id === logForm.project_id && (includeArchived.value || !task.archived)));
   const visibleLogs = computed(() => includeArchived.value
     ? logs.value
     : logs.value.filter((log) => !archivedProjectIds.value.has(log.project_id)));
@@ -443,6 +457,13 @@ export function useTimeTrackerApp() {
     groupedLogs.value = buildGroupedLogs(visibleLogs.value, logDurationMs);
   }
 
+  function resortEntitiesByRecentActivity() {
+    const { projectLatestStartById, taskLatestStartById } = buildLatestStartMaps(reportLogs.value);
+    projects.value = sortProjectsByRecentActivity(projects.value, projectLatestStartById);
+    tasks.value = sortTasksByStatus(tasks.value, taskLatestStartById);
+    allTasks.value = sortTasksByStatus(allTasks.value, taskLatestStartById);
+  }
+
   function applyLogStateMutation(previous: TimeLog | null | undefined, next: TimeLog | null | undefined) {
     const previousCounted = Boolean(previous && !previous.deleted_at);
     const nextCounted = Boolean(next && !next.deleted_at);
@@ -463,6 +484,7 @@ export function useTimeTrackerApp() {
       nextReportLogs.push(next);
     }
     reportLogs.value = sortLogsDesc(nextReportLogs);
+    resortEntitiesByRecentActivity();
 
     applyLogDurationMutation(previous, next);
 
@@ -595,10 +617,6 @@ export function useTimeTrackerApp() {
 
     window.addEventListener('online', handleOnlineRecovery);
 
-    timerInterval = window.setInterval(() => {
-      ticker.value = Date.now();
-    }, 1_000);
-
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       const nextUserId = session?.user.id ?? null;
       if (nextUserId) {
@@ -621,6 +639,14 @@ export function useTimeTrackerApp() {
     }
   });
 
+  watch(runningLog, (log) => {
+    if (log) {
+      startTicker();
+    } else {
+      stopTicker();
+    }
+  });
+
   onUnmounted(() => {
     stopSync?.();
     unsubscribeSync?.();
@@ -628,7 +654,7 @@ export function useTimeTrackerApp() {
     historyReady = false;
     window.removeEventListener('popstate', handlePopState);
     window.removeEventListener('online', handleOnlineRecovery);
-    if (timerInterval) window.clearInterval(timerInterval);
+    stopTicker();
   });
 
   async function enterUserScope(nextUserId: string) {
@@ -740,19 +766,29 @@ export function useTimeTrackerApp() {
   async function refreshLocalData() {
     if (!userId.value) return;
 
-    projects.value = await listProjects(userId.value, includeArchived.value);
+    const [nextProjects, nextAllTasks, nextTotalLogCount, allLogs] = await Promise.all([
+      listProjects(userId.value, includeArchived.value),
+      listTasks(userId.value),
+      countTimeLogs(userId.value),
+      listTimeLogs(userId.value)
+    ]);
+    const { projectLatestStartById, taskLatestStartById } = buildLatestStartMaps(allLogs);
+
+    projects.value = sortProjectsByRecentActivity(nextProjects, projectLatestStartById);
     if (!selectedProjectId.value || !projects.value.some((project) => project.id === selectedProjectId.value)) {
       selectedProjectId.value = projects.value[0]?.id ?? '';
     }
 
-    tasks.value = selectedProjectId.value ? sortTasksByStatus(await listTasksForProject(userId.value, selectedProjectId.value, includeArchived.value)) : [];
-    allTasks.value = sortTasksByStatus(await listTasks(userId.value));
+    const selectedProjectTasks = selectedProjectId.value
+      ? await listTasksForProject(userId.value, selectedProjectId.value, includeArchived.value)
+      : [];
+    tasks.value = sortTasksByStatus(selectedProjectTasks, taskLatestStartById);
+    allTasks.value = sortTasksByStatus(nextAllTasks, taskLatestStartById);
     if (selectedTaskId.value && !tasks.value.some((task) => task.id === selectedTaskId.value)) {
       selectedTaskId.value = null;
     }
 
-    totalLogCount.value = await countTimeLogs(userId.value);
-    const allLogs = await listTimeLogs(userId.value);
+    totalLogCount.value = nextTotalLogCount;
     reportLogs.value = allLogs;
     if (allLogs.length && !(await hasLogAggregates(userId.value))) {
       await rebuildLogAggregates(userId.value);
@@ -1161,7 +1197,7 @@ export function useTimeTrackerApp() {
     });
   }
 
-  const projectSwipe = useProjectSwipeActions(openProjectTasks);
+  const projectSwipe = useProjectSwipeActions(openProjectTasks, openProjectLogDetail);
 
   function handleLogProjectChange() {
     if (!logFormTasks.value.some((task) => task.id === logForm.task_id)) {
@@ -1187,13 +1223,11 @@ export function useTimeTrackerApp() {
   }
 
   function taskTotalDurationMs(taskId: string) {
-    const runningMs = runningLog.value?.task_id === taskId ? logDurationMs(runningLog.value) : 0;
-    return (taskDurationTotals.value[taskId] ?? 0) + runningMs;
+    return taskDurationTotals.value[taskId] ?? 0;
   }
 
   function projectTotalDurationMs(projectId: string) {
-    const runningMs = runningLog.value?.project_id === projectId ? logDurationMs(runningLog.value) : 0;
-    return (projectDurationTotals.value[projectId] ?? 0) + runningMs;
+    return projectDurationTotals.value[projectId] ?? 0;
   }
 
   return proxyRefs({
@@ -1295,10 +1329,8 @@ export function useTimeTrackerApp() {
     closeProjectTasks,
     openTaskCreate,
     closeTaskCreate,
-    handleProjectSwipeStart: projectSwipe.handleProjectSwipeStart,
-    handleProjectSwipeMove: projectSwipe.handleProjectSwipeMove,
-    handleProjectSwipeEnd: projectSwipe.handleProjectSwipeEnd,
-    handleProjectSwipeCancel: projectSwipe.handleProjectSwipeCancel,
+    handleProjectSwipeScroll: projectSwipe.handleProjectSwipeScroll,
+    handleProjectCardClick: projectSwipe.handleProjectCardClick,
     handleLogProjectChange,
     projectById,
     taskById,

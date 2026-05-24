@@ -22,13 +22,20 @@ const props = defineProps<{
 const lastTimelineScrollTop = ref(0);
 let ensuringTimelineFill = false;
 
-function isMainTimelineVisible() {
+function isMainTimelinePage() {
   return !props.app.reportsOpen
     && !props.app.settingsOpen
     && !props.app.calendarOpen
     && !props.app.editingLogId
     && !props.app.detailGroup
     && !props.app.projectLogDetailProjectId;
+}
+
+function isMainTimelineVisible() {
+  return isMainTimelinePage()
+    && !props.app.menuSheetOpen
+    && !props.app.projectsSheetOpen
+    && !props.app.editPickerMode;
 }
 
 async function ensureTimelineFill() {
@@ -105,9 +112,9 @@ watch(
 
 <template>
   <section class="relative sm:hidden">
-    <MobileMainTimeline :app="app" />
+    <MobileMainTimeline v-if="isMainTimelinePage()" :app="app" :live-timer="isMainTimelineVisible()" />
 
-    <nav v-if="!app.editingLogId && !app.detailGroup && !app.projectLogDetailProjectId" class="fixed inset-x-0 bottom-0 z-[70] bg-panel/95 px-3 py-2 shadow-soft backdrop-blur">
+    <nav v-if="!app.editingLogId && !app.detailGroup && !app.projectLogDetailProjectId && !app.menuSheetOpen && !app.projectsSheetOpen && !app.editPickerMode" class="fixed inset-x-0 bottom-0 z-[70] bg-panel/95 px-3 py-2 shadow-soft">
       <div v-if="app.reportsOpen || app.settingsOpen || app.calendarOpen" class="flex">
         <button class="inline-flex min-h-12 w-12 items-center justify-center rounded-xl border-0 bg-transparent text-ink" type="button" title="Menu" @click="app.openMenuSheet()">
           <Menu :size="22" />
