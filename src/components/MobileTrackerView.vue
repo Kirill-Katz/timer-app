@@ -20,6 +20,35 @@ const props = defineProps<{
 }>();
 
 const lastTimelineScrollTop = ref(0);
+let ensuringTimelineFill = false;
+
+function isMainTimelineVisible() {
+  return !props.app.reportsOpen
+    && !props.app.settingsOpen
+    && !props.app.calendarOpen
+    && !props.app.editingLogId
+    && !props.app.detailGroup
+    && !props.app.projectLogDetailProjectId;
+}
+
+async function ensureTimelineFill() {
+  if (ensuringTimelineFill || !isMainTimelineVisible()) return;
+
+  ensuringTimelineFill = true;
+  try {
+    while (props.app.hasMoreLogs && !props.app.loadingMoreLogs) {
+      await nextTick();
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+
+      if (!isMainTimelineVisible() || !isWindowNearBottom(240)) break;
+      await props.app.loadMoreLogs();
+    }
+  } finally {
+    ensuringTimelineFill = false;
+  }
+}
 
 async function restoreTimelineScrollPosition() {
   await nextTick();
@@ -37,13 +66,14 @@ function handleWindowScroll() {
   lastTimelineScrollTop.value = nextScrollTop;
   if (!scrollingDown || !props.app.hasMoreLogs || props.app.loadingMoreLogs) return;
 
-  if (isWindowNearBottom()) {
+  if (isWindowNearBottom(240)) {
     void props.app.loadMoreLogs();
   }
 }
 
 onMounted(() => {
   window.addEventListener('scroll', handleWindowScroll, { passive: true });
+  void ensureTimelineFill();
 });
 
 onUnmounted(() => {
@@ -57,6 +87,17 @@ watch(
     const wasMainTimeline = !previousReportsOpen && !previousSettingsOpen && !previousCalendarOpen && !previousEditingLogId && !previousDetailDay;
     if (!isMainTimeline || wasMainTimeline) return;
     await restoreTimelineScrollPosition();
+    void ensureTimelineFill();
+  },
+  { flush: 'post' }
+);
+
+watch(
+  () => [props.app.groupedLogs.length, props.app.loadingMoreLogs, props.app.hasMoreLogs],
+  ([, loadingMoreLogs, hasMoreLogs]) => {
+    if (!loadingMoreLogs && hasMoreLogs) {
+      void ensureTimelineFill();
+    }
   },
   { flush: 'post' }
 );
