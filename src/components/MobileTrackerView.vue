@@ -114,7 +114,7 @@ watch(
   <section class="relative sm:hidden">
     <MobileMainTimeline v-if="isMainTimelinePage()" :app="app" :live-timer="isMainTimelineVisible()" />
 
-    <nav v-if="!app.editingLogId && !app.detailGroup && !app.projectLogDetailProjectId && !app.menuSheetOpen && !app.projectsSheetOpen && !app.editPickerMode" class="fixed inset-x-0 bottom-0 z-[70] bg-panel/95 px-3 py-2 shadow-soft">
+    <nav v-if="!app.editingLogId && !app.detailGroup && !app.projectLogDetailProjectId && !app.menuSheetOpen && !app.projectsSheetOpen && !app.editPickerMode" class="fixed inset-x-0 bottom-0 z-[70] bg-panel px-3 py-2 shadow-soft">
       <div v-if="app.reportsOpen || app.settingsOpen || app.calendarOpen" class="flex">
         <button class="inline-flex min-h-12 w-12 items-center justify-center rounded-xl border-0 bg-transparent text-ink" type="button" title="Menu" @click="app.openMenuSheet()">
           <Menu :size="22" />
