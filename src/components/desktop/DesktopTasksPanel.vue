@@ -22,6 +22,7 @@ defineProps<{
       <div
         v-for="task in app.tasks"
         :key="task.id"
+        v-memo="[task.name, task.archived, task.completed]"
         class="grid grid-cols-[2.5rem_1fr_2.75rem] items-center gap-2 rounded-lg border border-line bg-panel p-2"
         :class="[task.archived ? 'opacity-55' : '', task.completed ? 'opacity-70' : '']"
       >

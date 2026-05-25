@@ -35,7 +35,13 @@ withDefaults(defineProps<{
           <h2 class="text-xl font-medium">{{ group.label }}</h2>
           <span class="text-sm font-normal text-stone-300">{{ app.formatDurationMs(group.totalMs) }}</span>
         </div>
-        <article v-for="entry in group.entries" :key="`${group.label}-${entry.projectId}-${entry.taskId ?? 'none'}-${entry.latestStart}`" class="grid grid-cols-[1fr_auto] gap-3 border-b border-line px-1 py-2" @click="app.openLogDetail(app.dayKey(entry.latestStart), entry.projectId, entry.taskId)">
+        <article
+          v-for="entry in group.entries"
+          :key="`${group.label}-${entry.projectId}-${entry.taskId ?? 'none'}-${entry.latestStart}`"
+          v-memo="[entry.projectId, entry.taskId, entry.totalMs, entry.latestStart, app.projectById(entry.projectId)?.name, app.projectById(entry.projectId)?.color, app.taskById(entry.taskId)?.name]"
+          class="grid grid-cols-[1fr_auto] gap-3 border-b border-line px-1 py-2"
+          @click="app.openLogDetail(app.dayKey(entry.latestStart), entry.projectId, entry.taskId)"
+        >
           <div class="min-w-0">
             <div class="flex items-center gap-2">
               <span class="h-3 w-3 flex-none rounded-full border border-black/10" :style="{ backgroundColor: app.projectById(entry.projectId)?.color ?? '#777' }"></span>

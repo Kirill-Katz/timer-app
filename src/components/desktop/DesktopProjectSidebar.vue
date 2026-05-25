@@ -26,7 +26,15 @@ defineProps<{
       </div>
     </form>
     <div class="mt-4 grid max-h-64 gap-2 overflow-auto pr-1 lg:max-h-[calc(100vh-18rem)]">
-      <button v-for="project in app.projects" :key="project.id" class="flex min-h-12 items-center gap-3 rounded-lg border bg-panel px-3 text-left font-normal text-ink" :class="[project.id === app.selectedProjectId ? 'border-sage shadow-[inset_3px_0_0_#7ef2bc]' : 'border-line', project.archived ? 'opacity-55' : '']" type="button" @click="app.selectedProjectId = project.id; app.refreshLocalData()">
+      <button
+        v-for="project in app.projects"
+        :key="project.id"
+        v-memo="[project.name, project.color, project.archived, project.id === app.selectedProjectId]"
+        class="flex min-h-12 items-center gap-3 rounded-lg border bg-panel px-3 text-left font-normal text-ink"
+        :class="[project.id === app.selectedProjectId ? 'border-sage shadow-[inset_3px_0_0_#7ef2bc]' : 'border-line', project.archived ? 'opacity-55' : '']"
+        type="button"
+        @click="app.selectedProjectId = project.id; app.refreshLocalData()"
+      >
         <span class="h-3 w-3 flex-none rounded-full border border-black/10" :style="{ backgroundColor: project.color }"></span>
         <span class="min-w-0 truncate">{{ project.name }}</span>
       </button>

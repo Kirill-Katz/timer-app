@@ -13,7 +13,17 @@ defineProps<{
       <h2 class="text-xl font-medium">Time logs</h2>
     </div>
     <div class="grid gap-2">
-      <article v-for="log in app.visibleLogs" :key="log.id" class="grid cursor-pointer grid-cols-[1fr_auto_auto] items-start gap-3 rounded-lg border border-line bg-panel p-3 transition hover:border-sage" tabindex="0" role="button" @click="app.openLogEditor(log)" @keydown.enter.prevent="app.openLogEditor(log)" @keydown.space.prevent="app.openLogEditor(log)">
+      <article
+        v-for="log in app.visibleLogs"
+        :key="log.id"
+        v-memo="[log.project_id, log.task_id, log.start_time, log.end_time, log.deleted_at, log.end_time ? 0 : app.ticker, app.projectById(log.project_id)?.name, app.projectById(log.project_id)?.color, app.taskById(log.task_id)?.name]"
+        class="grid cursor-pointer grid-cols-[1fr_auto_auto] items-start gap-3 rounded-lg border border-line bg-panel p-3 transition hover:border-sage"
+        tabindex="0"
+        role="button"
+        @click="app.openLogEditor(log)"
+        @keydown.enter.prevent="app.openLogEditor(log)"
+        @keydown.space.prevent="app.openLogEditor(log)"
+      >
         <div class="grid min-w-0 gap-1">
           <div class="flex items-center gap-2">
             <span class="h-3 w-3 flex-none rounded-full border border-black/10" :style="{ backgroundColor: app.projectById(log.project_id)?.color ?? '#777' }"></span>

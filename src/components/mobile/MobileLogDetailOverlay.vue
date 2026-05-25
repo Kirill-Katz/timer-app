@@ -73,6 +73,7 @@ watch(() => props.app.detailGroup?.projectId ?? null, (projectId) => {
       <MobileLogRow
         v-for="log in app.detailLogs"
         :key="log.id"
+        v-memo="[log.project_id, log.task_id, log.start_time, log.end_time, log.deleted_at, log.end_time ? 0 : app.ticker]"
         :log="log"
         :time-label="`${app.formatTime(log.start_time)} - ${log.end_time ? app.formatTime(log.end_time) : 'Running'}`"
         :duration-label="app.formatDuration(log.start_time, log.end_time)"

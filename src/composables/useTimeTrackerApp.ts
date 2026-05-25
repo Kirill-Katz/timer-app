@@ -711,7 +711,6 @@ export function useTimeTrackerApp() {
 
     unsubscribeSync = subscribeSyncState((state) => {
       Object.assign(syncState, state);
-      void refreshLocalData();
     });
 
     window.addEventListener('online', handleOnlineRecovery);
@@ -1366,10 +1365,16 @@ export function useTimeTrackerApp() {
   }
 
   function formatDuration(start: string, end: string | null) {
-    return formatTimeLogDuration(start, end, ticker.value);
+    if (end) {
+      return formatTimeLogDuration(start, end);
+    }
+    return formatTimeLogDuration(start, null, ticker.value);
   }
 
   function logDurationMs(log: TimeLog) {
+    if (log.end_time) {
+      return timeLogDurationMs(log);
+    }
     return timeLogDurationMs(log, ticker.value);
   }
 

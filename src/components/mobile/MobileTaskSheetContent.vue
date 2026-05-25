@@ -34,7 +34,12 @@ defineProps<{
     </button>
     <VirtualScroller class="max-h-[40vh] pb-8" :items="app.taskSheetTasks" :item-height="64" item-key="id" :overscan="4">
       <template #default="{ item: task }">
-        <article class="grid h-full cursor-pointer grid-cols-[2.25rem_1fr_auto] items-start gap-1.5 rounded-lg bg-panel px-2.5 py-1.5" :class="[task.archived ? 'opacity-55' : '', task.completed ? 'opacity-70' : '']" @click="app.openTaskLogDetail(task.id)">
+        <article
+          class="grid h-full cursor-pointer grid-cols-[2.25rem_1fr_auto] items-start gap-1.5 rounded-lg bg-panel px-2.5 py-1.5"
+          :class="[task.archived ? 'opacity-55' : '', task.completed ? 'opacity-70' : '']"
+          v-memo="[task.name, task.archived, task.completed, app.taskTotalDurationMs(task.id)]"
+          @click="app.openTaskLogDetail(task.id)"
+        >
           <button
             class="relative inline-flex h-6 w-6 items-center justify-center rounded-full border-2 transition"
             :class="task.completed ? 'border-sage bg-sage text-ink' : 'border-stone-300 bg-transparent text-transparent'"
