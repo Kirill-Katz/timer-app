@@ -546,7 +546,7 @@ export function useTimeTrackerApp() {
       if (next && !next.deleted_at && matchesDetail(next)) {
         nextDetailLogs.push(next);
       }
-      detailLogs.value = nextDetailLogs.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+      detailLogs.value = sortLogsDesc(nextDetailLogs);
     }
 
     if (projectLogDetailProjectId.value) {

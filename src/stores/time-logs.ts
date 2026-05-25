@@ -123,7 +123,7 @@ export async function listTimeLogsForGroup(userId: string, day: string, projectI
     .filter((log) => !log.deleted_at && log.project_id === projectId && log.task_id === taskId)
     .toArray();
 
-  return logs.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+  return logs.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
 }
 
 export async function sumTaskTimeLogDurations(userId: string): Promise<Record<string, number>> {
