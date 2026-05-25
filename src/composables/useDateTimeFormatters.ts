@@ -54,7 +54,7 @@ export function dayLabel(value: string) {
 }
 
 export function dayKey(value: string) {
-  return new Date(value).toISOString().slice(0, 10);
+  return toDateLocal(value);
 }
 
 export function formatTime(value: string) {

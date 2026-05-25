@@ -168,6 +168,7 @@ export function useTimeTrackerApp() {
   let historyReady = false;
   let restoringHistory = false;
   let historyRestoreSequence = 0;
+  let enteringUserScopeId: string | null = null;
 
   function cloneDetailGroup(group: DetailGroup | null) {
     return group ? { ...group } : null;
@@ -585,6 +586,14 @@ export function useTimeTrackerApp() {
     }
   }
 
+  function applyStoppedTimerLogs(previous: TimeLog, stoppedLogs: TimeLog[]) {
+    const [firstStoppedLog, ...additionalStoppedLogs] = stoppedLogs;
+    applyLogStateMutation(previous, firstStoppedLog);
+    additionalStoppedLogs.forEach((log) => {
+      applyLogStateMutation(null, log);
+    });
+  }
+
   async function loadInitialLogs() {
     if (!userId.value) return;
 
@@ -753,20 +762,31 @@ export function useTimeTrackerApp() {
       return;
     }
 
+    if (userId.value === nextUserId && enteringUserScopeId === nextUserId) {
+      return;
+    }
+
+    enteringUserScopeId = nextUserId;
     userId.value = nextUserId;
     authMessage.value = '';
     stopSync?.();
 
-    await syncBootstrapData(nextUserId, true);
-    stopSync = startBackgroundSync(nextUserId);
     await refreshLocalData();
+    stopSync = startBackgroundSync(nextUserId);
+    void syncBootstrapData(nextUserId, false).finally(() => {
+      if (enteringUserScopeId === nextUserId) {
+        enteringUserScopeId = null;
+      }
+    });
   }
 
   async function syncBootstrapData(scopeUserId: string, requireOnline: boolean) {
     try {
-      await ensureBootstrapData(scopeUserId, requireOnline);
+      const bootstrapped = await ensureBootstrapData(scopeUserId, requireOnline);
       syncState.lastError = null;
-      await refreshLocalData();
+      if (bootstrapped) {
+        await refreshLocalData();
+      }
     } catch (error) {
       syncState.lastError = error instanceof Error ? error.message : String(error);
     }
@@ -775,6 +795,7 @@ export function useTimeTrackerApp() {
   function leaveUserScope() {
     stopSync?.();
     stopSync = undefined;
+    enteringUserScopeId = null;
     userId.value = null;
     projects.value = [];
     tasks.value = [];
@@ -972,10 +993,10 @@ export function useTimeTrackerApp() {
 
   async function switchTimer(projectId: string, taskId: string | null = null) {
     if (!userId.value) return;
-    let stoppedLog: TimeLog | undefined;
     if (runningLog.value) {
-      stoppedLog = await stopTimer(userId.value, runningLog.value);
-      applyLogStateMutation(runningLog.value, stoppedLog);
+      const currentRunningLog = runningLog.value;
+      const stoppedLogs = await stopTimer(userId.value, currentRunningLog);
+      applyStoppedTimerLogs(currentRunningLog, stoppedLogs);
     }
     selectedProjectId.value = projectId;
     selectedTaskId.value = taskId;
@@ -988,8 +1009,8 @@ export function useTimeTrackerApp() {
   async function endTimer() {
     if (!userId.value || !runningLog.value) return;
     const currentRunningLog = runningLog.value;
-    const stoppedLog = await stopTimer(userId.value, currentRunningLog);
-    applyLogStateMutation(currentRunningLog, stoppedLog);
+    const stoppedLogs = await stopTimer(userId.value, currentRunningLog);
+    applyStoppedTimerLogs(currentRunningLog, stoppedLogs);
   }
 
   async function saveLog() {

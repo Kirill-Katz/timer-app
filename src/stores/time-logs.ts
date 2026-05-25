@@ -4,6 +4,67 @@ import { applyTimeLogAggregateMutation, listDurationTotals } from '../services/l
 import { enqueueOperation } from '../services/sync-queue';
 import type { EditableTimeLog, TimeLog } from '../types';
 
+function localDayKey(value: Date): string {
+  const year = value.getFullYear();
+  const month = `${value.getMonth() + 1}`.padStart(2, '0');
+  const day = `${value.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function localDayBoundsIso(day: string) {
+  const start = new Date(`${day}T00:00:00`);
+  const endExclusive = new Date(start);
+  endExclusive.setDate(start.getDate() + 1);
+
+  return {
+    start: start.toISOString(),
+    endExclusive: endExclusive.toISOString()
+  };
+}
+
+function nextLocalMidnight(value: Date): Date {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate() + 1);
+}
+
+function splitStoppedTimerLog(log: TimeLog, endTime: string): EditableTimeLog[] {
+  const start = new Date(log.start_time);
+  const end = new Date(endTime);
+
+  if (end.getTime() <= start.getTime()) {
+    return [{
+      project_id: log.project_id,
+      task_id: log.task_id,
+      start_time: log.start_time,
+      end_time: endTime
+    }];
+  }
+
+  const segments: EditableTimeLog[] = [];
+  let cursor = start;
+
+  while (localDayKey(cursor) !== localDayKey(end)) {
+    const boundary = nextLocalMidnight(cursor);
+    if (boundary.getTime() >= end.getTime()) break;
+
+    segments.push({
+      project_id: log.project_id,
+      task_id: log.task_id,
+      start_time: cursor.toISOString(),
+      end_time: boundary.toISOString()
+    });
+    cursor = boundary;
+  }
+
+  segments.push({
+    project_id: log.project_id,
+    task_id: log.task_id,
+    start_time: cursor.toISOString(),
+    end_time: endTime
+  });
+
+  return segments;
+}
+
 export async function listTimeLogs(userId: string): Promise<TimeLog[]> {
   const logs = await db.time_logs.where('user_id').equals(userId).sortBy('start_time');
   return logs.filter((log) => !log.deleted_at).reverse();
@@ -55,11 +116,10 @@ export async function listTaskTimeLogsPage(userId: string, taskId: string, offse
 }
 
 export async function listTimeLogsForGroup(userId: string, day: string, projectId: string, taskId: string | null): Promise<TimeLog[]> {
-  const start = `${day}T00:00:00.000Z`;
-  const end = `${day}T23:59:59.999Z`;
+  const { start, endExclusive } = localDayBoundsIso(day);
   const logs = await db.time_logs
     .where('[user_id+start_time]')
-    .between([userId, start], [userId, end], true, true)
+    .between([userId, start], [userId, endExclusive], true, false)
     .filter((log) => !log.deleted_at && log.project_id === projectId && log.task_id === taskId)
     .toArray();
 
@@ -139,11 +199,15 @@ export async function startTimer(userId: string, projectId: string, taskId: stri
   });
 }
 
-export async function stopTimer(userId: string, log: TimeLog): Promise<TimeLog> {
-  return updateTimeLog(userId, log, {
-    project_id: log.project_id,
-    task_id: log.task_id,
-    start_time: log.start_time,
-    end_time: nowIso()
-  });
+export async function stopTimer(userId: string, log: TimeLog): Promise<TimeLog[]> {
+  const segments = splitStoppedTimerLog(log, nowIso());
+  const [firstSegment, ...remainingSegments] = segments;
+  const firstLog = await updateTimeLog(userId, log, firstSegment);
+  const additionalLogs: TimeLog[] = [];
+
+  for (const segment of remainingSegments) {
+    additionalLogs.push(await createTimeLog(userId, segment));
+  }
+
+  return [firstLog, ...additionalLogs];
 }

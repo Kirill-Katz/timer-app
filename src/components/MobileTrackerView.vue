@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { Menu } from 'lucide-vue-next';
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import CalendarPanel from './CalendarPanel.vue';
+import { defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { isWindowNearBottom } from '../composables/useNearBottomScroll';
 import type { TimeTrackerAppContext } from '../composables/useTimeTrackerApp';
-import ReportsPanel from './ReportsPanel.vue';
 import SettingsPanel from './SettingsPanel.vue';
 import MobileEditPickerSheet from './mobile/MobileEditPickerSheet.vue';
 import MobileLogDetailOverlay from './mobile/MobileLogDetailOverlay.vue';
@@ -19,6 +17,9 @@ import MobileTaskLogDetailOverlay from './mobile/MobileTaskLogDetailOverlay.vue'
 const props = defineProps<{
   app: TimeTrackerAppContext;
 }>();
+
+const CalendarPanel = defineAsyncComponent(() => import('./CalendarPanel.vue'));
+const ReportsPanel = defineAsyncComponent(() => import('./ReportsPanel.vue'));
 
 const lastTimelineScrollTop = ref(0);
 let ensuringTimelineFill = false;

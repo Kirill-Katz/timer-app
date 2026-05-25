@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { Settings } from 'lucide-vue-next';
+import { defineAsyncComponent } from 'vue';
 import type { TimeTrackerAppContext } from '../composables/useTimeTrackerApp';
-import CalendarPanel from './CalendarPanel.vue';
-import ReportsPanel from './ReportsPanel.vue';
 import SettingsPanel from './SettingsPanel.vue';
 import DesktopLogEditor from './desktop/DesktopLogEditor.vue';
 import DesktopLogsPanel from './desktop/DesktopLogsPanel.vue';
@@ -14,6 +13,9 @@ import DesktopTimerPanel from './desktop/DesktopTimerPanel.vue';
 defineProps<{
   app: TimeTrackerAppContext;
 }>();
+
+const CalendarPanel = defineAsyncComponent(() => import('./CalendarPanel.vue'));
+const ReportsPanel = defineAsyncComponent(() => import('./ReportsPanel.vue'));
 </script>
 
 <template>
