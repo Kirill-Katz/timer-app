@@ -60,6 +60,7 @@ const rangeEnd = ref<Date>(new Date());
 const fittedHourHeightPx = ref(DEFAULT_HOUR_HEIGHT_PX);
 const verticalZoom = ref(1);
 const boardHeightPx = ref((DEFAULT_HOUR_HEIGHT_PX * HOURS_PER_DAY) + DAY_HEADER_HEIGHT_PX);
+const currentTimeMs = ref(Date.now());
 let restoringScroll = false;
 let edgeLoadLock: 'past' | 'future' | null = null;
 let pinchStartDistance = 0;
@@ -68,6 +69,12 @@ let zoomRestoreToken = 0;
 
 const hourHeightPx = computed(() => fittedHourHeightPx.value * verticalZoom.value);
 const zoomPercentLabel = computed(() => `${Math.round(verticalZoom.value * 100)}%`);
+const currentDayKey = computed(() => formatDayKey(startOfDay(new Date(currentTimeMs.value))));
+const currentTimeTopPx = computed(() => {
+  const now = new Date(currentTimeMs.value);
+  const start = startOfDay(now).getTime();
+  return ((now.getTime() - start) / 3_600_000) * hourHeightPx.value;
+});
 
 type ScrollAnchor = {
   dayKey: string;
@@ -473,9 +480,14 @@ function handleHorizontalScroll() {
   }
 }
 
+function captureCurrentTime() {
+  currentTimeMs.value = Date.now();
+}
+
 onMounted(() => {
   initializeRange();
   rebuildDays();
+  captureCurrentTime();
   void nextTick(() => {
     updateCalendarMetrics();
     scrollToAnchorDay();
@@ -485,6 +497,8 @@ onMounted(() => {
 
 watch(() => props.app.calendarOpen, (open) => {
   if (!open) return;
+
+  captureCurrentTime();
   initializeRange();
   rebuildDays();
   void nextTick(() => {
@@ -541,6 +555,12 @@ onBeforeUnmount(() => {
               </div>
               <div class="calendar-day__body">
                 <div v-for="hour in HOURS_PER_DAY" :key="`${day.key}:${hour}`" class="calendar-day__slot"></div>
+                <div
+                  v-if="day.key === currentDayKey"
+                  class="calendar-current-time"
+                  :style="{ top: `${currentTimeTopPx}px` }"
+                  aria-hidden="true"
+                ></div>
                 <button
                   v-for="segment in day.segments"
                   :key="segment.id"

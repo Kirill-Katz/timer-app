@@ -14,6 +14,7 @@ import MobileMenuSheet from './mobile/MobileMenuSheet.vue';
 import MobilePageOverlay from './mobile/MobilePageOverlay.vue';
 import MobileProjectLogDetailOverlay from './mobile/MobileProjectLogDetailOverlay.vue';
 import MobileProjectsSheet from './mobile/MobileProjectsSheet.vue';
+import MobileTaskLogDetailOverlay from './mobile/MobileTaskLogDetailOverlay.vue';
 
 const props = defineProps<{
   app: TimeTrackerAppContext;
@@ -28,7 +29,8 @@ function isMainTimelinePage() {
     && !props.app.calendarOpen
     && !props.app.editingLogId
     && !props.app.detailGroup
-    && !props.app.projectLogDetailProjectId;
+    && !props.app.projectLogDetailProjectId
+    && !props.app.taskLogDetailTaskId;
 }
 
 function isMainTimelineVisible() {
@@ -114,7 +116,7 @@ watch(
   <section class="relative sm:hidden">
     <MobileMainTimeline v-if="isMainTimelinePage()" :app="app" :live-timer="isMainTimelineVisible()" />
 
-    <nav v-if="!app.editingLogId && !app.detailGroup && !app.projectLogDetailProjectId && !app.menuSheetOpen && !app.projectsSheetOpen && !app.editPickerMode" class="fixed inset-x-0 bottom-0 z-[70] bg-panel px-3 py-2 shadow-soft">
+    <nav v-if="!app.editingLogId && !app.detailGroup && !app.projectLogDetailProjectId && !app.taskLogDetailTaskId && !app.menuSheetOpen && !app.projectsSheetOpen && !app.editPickerMode" class="fixed inset-x-0 bottom-0 z-[70] bg-panel px-3 py-2 shadow-soft">
       <div v-if="app.reportsOpen || app.settingsOpen || app.calendarOpen" class="flex">
         <button class="inline-flex min-h-12 w-12 items-center justify-center rounded-xl border-0 bg-transparent text-ink" type="button" title="Menu" @click="app.openMenuSheet()">
           <Menu :size="22" />
@@ -148,6 +150,7 @@ watch(
 
     <MobileLogDetailOverlay :app="app" />
     <MobileProjectLogDetailOverlay :app="app" />
+    <MobileTaskLogDetailOverlay :app="app" />
 
     <MobileLogEditorOverlay :app="app" />
     <MobileEditPickerSheet :app="app" />

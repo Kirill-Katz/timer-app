@@ -45,7 +45,7 @@ watch(() => props.app.projectLogDetailProjectId, (projectId) => {
   <MobileOverlay :show="Boolean(app.projectLogDetailProjectId)" content-class="px-4 py-5" @scroll="handleScroll">
     <div v-if="app.projectLogDetailProject" class="relative mb-4 grid min-h-10 justify-items-center gap-1">
       <MobileBackButton class="absolute left-0" @click="app.closeProjectLogDetail" />
-      <div class="mx-12 inline-flex max-w-[calc(100vw-6rem)] items-center justify-center gap-2">
+      <div class="mx-12 grid w-[min(16.75rem,calc(100vw-6rem))] grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
         <label class="relative h-3 w-3 shrink-0 overflow-hidden rounded-full border border-black/10" :style="{ backgroundColor: app.projectLogDetailProject.color }" aria-label="Project color">
           <input
             v-model="app.projectLogDetailProject.color"
@@ -59,12 +59,12 @@ watch(() => props.app.projectLogDetailProjectId, (projectId) => {
           v-if="editingProjectName"
           ref="projectNameInput"
           v-model="app.projectLogDetailProject.name"
-          class="min-w-0 flex-1 bg-transparent text-center text-xl font-medium text-ink outline-none"
+          class="min-w-0 w-full bg-transparent text-center text-xl font-medium text-ink outline-none"
           aria-label="Project name"
           @blur="saveProjectName"
           @keydown.enter.prevent="saveProjectName"
         />
-        <button v-else class="inline-block min-w-0 max-w-full flex-none truncate text-center text-xl font-medium" type="button" @click="startEditingProjectName">
+        <button v-else class="block min-w-0 w-full truncate text-center text-xl font-medium" type="button" @click="startEditingProjectName">
           {{ app.projectLogDetailProject.name }}
         </button>
       </div>

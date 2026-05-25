@@ -202,6 +202,29 @@
   border-bottom: 1px solid rgba(70, 81, 94, 0.55);
 }
 
+.calendar-current-time {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  height: 1px;
+  background: #f87171;
+  box-shadow: 0 0 0 1px rgb(248 113 113 / 0.18);
+  pointer-events: none;
+}
+
+.calendar-current-time::before {
+  content: "";
+  position: absolute;
+  left: -0.18rem;
+  top: 50%;
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 9999px;
+  background: #f87171;
+  transform: translateY(-50%);
+}
+
 .calendar-entry {
   position: absolute;
   display: grid;

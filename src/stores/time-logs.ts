@@ -17,6 +17,10 @@ export async function countProjectTimeLogs(userId: string, projectId: string): P
   return db.time_logs.where('user_id').equals(userId).filter((log) => !log.deleted_at && log.project_id === projectId).count();
 }
 
+export async function countTaskTimeLogs(userId: string, taskId: string): Promise<number> {
+  return db.time_logs.where('user_id').equals(userId).filter((log) => !log.deleted_at && log.task_id === taskId).count();
+}
+
 export async function listTimeLogsPage(userId: string, offset: number, limit: number): Promise<TimeLog[]> {
   return db.time_logs
     .where('[user_id+start_time]')
@@ -34,6 +38,17 @@ export async function listProjectTimeLogsPage(userId: string, projectId: string,
     .between([userId, Dexie.minKey], [userId, Dexie.maxKey])
     .reverse()
     .filter((log) => !log.deleted_at && log.project_id === projectId)
+    .offset(offset)
+    .limit(limit)
+    .toArray();
+}
+
+export async function listTaskTimeLogsPage(userId: string, taskId: string, offset: number, limit: number): Promise<TimeLog[]> {
+  return db.time_logs
+    .where('[user_id+start_time]')
+    .between([userId, Dexie.minKey], [userId, Dexie.maxKey])
+    .reverse()
+    .filter((log) => !log.deleted_at && log.task_id === taskId)
     .offset(offset)
     .limit(limit)
     .toArray();

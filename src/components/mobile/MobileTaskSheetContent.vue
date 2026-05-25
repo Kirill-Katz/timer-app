@@ -34,18 +34,18 @@ defineProps<{
     </button>
     <VirtualScroller class="max-h-[40vh] pb-8" :items="app.taskSheetTasks" :item-height="64" item-key="id" :overscan="4">
       <template #default="{ item: task }">
-        <article class="grid h-full grid-cols-[2.25rem_1fr_auto] items-start gap-1.5 rounded-lg bg-panel px-2.5 py-1.5" :class="[task.archived ? 'opacity-55' : '', task.completed ? 'opacity-70' : '']">
+        <article class="grid h-full cursor-pointer grid-cols-[2.25rem_1fr_auto] items-start gap-1.5 rounded-lg bg-panel px-2.5 py-1.5" :class="[task.archived ? 'opacity-55' : '', task.completed ? 'opacity-70' : '']" @click="app.openTaskLogDetail(task.id)">
           <button
             class="relative inline-flex h-6 w-6 items-center justify-center rounded-full border-2 transition"
             :class="task.completed ? 'border-sage bg-sage text-ink' : 'border-stone-300 bg-transparent text-transparent'"
             type="button"
             :aria-label="task.completed ? 'Mark task incomplete' : 'Mark task complete'"
-            @click="app.toggleTaskCompleted(task)"
+            @click.stop="app.toggleTaskCompleted(task)"
           >
             <span v-if="task.completed" class="h-2.5 w-2.5 rounded-full bg-ink"></span>
           </button>
           <span class="min-w-0 whitespace-normal break-words text-sm font-normal leading-snug">{{ task.name }}</span>
-          <button class="glass-start mt-0.5 inline-flex h-7 w-24 shrink-0 items-center justify-center gap-1 self-start rounded-full px-2 text-[11px] font-normal tabular-nums" type="button" @click="app.switchTimer(task.project_id, task.id)">
+          <button class="glass-start mt-0.5 inline-flex h-7 w-24 shrink-0 items-center justify-center gap-1 self-start rounded-full px-2 text-[11px] font-normal tabular-nums" type="button" @click.stop="app.switchTimer(task.project_id, task.id)">
             <Play :size="14" fill="currentColor" /> {{ app.formatDurationMs(app.taskTotalDurationMs(task.id)) }}
           </button>
         </article>

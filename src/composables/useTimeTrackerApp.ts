@@ -5,7 +5,7 @@ import { hasLogAggregates, rebuildLogAggregates } from '../services/log-aggregat
 import { ensureBootstrapData, reloadFromRemote, startBackgroundSync, subscribeSyncState, type SyncState } from '../services/sync-queue';
 import { createProject, listProjects, setProjectArchived, updateProject } from '../stores/projects';
 import { createTask, listTasks, listTasksForProject, setTaskArchived, setTaskCompleted, updateTask } from '../stores/tasks';
-import { countProjectTimeLogs, countTimeLogs, getRunningLog, listProjectTimeLogsPage, listTimeLogs, listTimeLogsForGroup, listTimeLogsPage, softDeleteTimeLog, startTimer, stopTimer, sumProjectTimeLogDurations, sumTaskTimeLogDurations, updateTimeLog } from '../stores/time-logs';
+import { countProjectTimeLogs, countTaskTimeLogs, countTimeLogs, getRunningLog, listProjectTimeLogsPage, listTaskTimeLogsPage, listTimeLogs, listTimeLogsForGroup, listTimeLogsPage, softDeleteTimeLog, startTimer, stopTimer, sumProjectTimeLogDurations, sumTaskTimeLogDurations, updateTimeLog } from '../stores/time-logs';
 import type { DetailGroup, GroupedLogSection, Project, Task, TimeLog } from '../types';
 import { dayKey, formatDateTime, formatDuration as formatTimeLogDuration, formatDurationMs, formatTime, fromDateAndTimeLocal, toDateLocal, toTimeLocal } from './useDateTimeFormatters';
 import { useProjectSwipeActions } from './useProjectSwipeActions';
@@ -26,6 +26,7 @@ type NavigationSnapshot = {
   editingLogId: string | null;
   detailGroup: DetailGroup | null;
   projectLogDetailProjectId: string | null;
+  taskLogDetailTaskId: string | null;
   editPickerMode: 'project' | 'task' | null;
 };
 type AppHistoryState = {
@@ -53,6 +54,8 @@ export function useTimeTrackerApp() {
   const detailLogs = ref<TimeLog[]>([]);
   const projectLogDetailProjectId = ref<string | null>(null);
   const projectLogDetailLogs = ref<TimeLog[]>([]);
+  const taskLogDetailTaskId = ref<string | null>(null);
+  const taskLogDetailLogs = ref<TimeLog[]>([]);
   const selectedProjectId = ref('');
   const selectedTaskId = ref<string | null>(null);
   const includeArchived = ref(false);
@@ -78,6 +81,10 @@ export function useTimeTrackerApp() {
   const totalProjectLogCount = ref(0);
   const hasMoreProjectLogs = ref(true);
   const loadingMoreProjectLogs = ref(false);
+  const taskLogOffset = ref(0);
+  const totalTaskLogCount = ref(0);
+  const hasMoreTaskLogs = ref(true);
+  const loadingMoreTaskLogs = ref(false);
   const timelineScrollTop = ref(0);
   const ticker = ref(Date.now());
   const syncState = reactive<SyncState>({
@@ -148,6 +155,8 @@ export function useTimeTrackerApp() {
   const selectedProject = computed(() => projectMap.value.get(selectedProjectId.value));
   const taskSheetProject = computed(() => taskSheetProjectId.value ? projectMap.value.get(taskSheetProjectId.value) : undefined);
   const projectLogDetailProject = computed(() => projectLogDetailProjectId.value ? projectMap.value.get(projectLogDetailProjectId.value) : undefined);
+  const taskLogDetailTask = computed(() => taskLogDetailTaskId.value ? taskMap.value.get(taskLogDetailTaskId.value) : undefined);
+  const taskLogDetailProject = computed(() => taskLogDetailTask.value ? projectMap.value.get(taskLogDetailTask.value.project_id) : undefined);
   const taskSheetTasks = computed(() => allTasks.value.filter((task) => task.project_id === taskSheetProjectId.value && (includeArchived.value || !task.archived)));
   const activeTasks = computed(() => tasks.value.filter((task) => includeArchived.value || !task.archived));
   const logFormTasks = computed(() => allTasks.value.filter((task) => task.project_id === logForm.project_id && (includeArchived.value || !task.archived)));
@@ -189,6 +198,15 @@ export function useTimeTrackerApp() {
     loadingMoreProjectLogs.value = false;
   }
 
+  function resetTaskLogDetailState() {
+    taskLogDetailTaskId.value = null;
+    taskLogDetailLogs.value = [];
+    taskLogOffset.value = 0;
+    totalTaskLogCount.value = 0;
+    hasMoreTaskLogs.value = true;
+    loadingMoreTaskLogs.value = false;
+  }
+
   function resetSheets() {
     menuSheetOpen.value = false;
     projectsSheetOpen.value = false;
@@ -212,6 +230,7 @@ export function useTimeTrackerApp() {
       editingLogId: editingLogId.value,
       detailGroup: cloneDetailGroup(detailGroup.value),
       projectLogDetailProjectId: projectLogDetailProjectId.value,
+      taskLogDetailTaskId: taskLogDetailTaskId.value,
       editPickerMode: editPickerMode.value
     };
   }
@@ -219,7 +238,8 @@ export function useTimeTrackerApp() {
   function normalizeNavigationSnapshot(snapshot: NavigationSnapshot): NavigationSnapshot {
     const normalized: NavigationSnapshot = {
       ...snapshot,
-      detailGroup: cloneDetailGroup(snapshot.detailGroup)
+      detailGroup: cloneDetailGroup(snapshot.detailGroup),
+      taskLogDetailTaskId: snapshot.taskLogDetailTaskId ?? null
     };
 
     if (!normalized.projectsSheetOpen) {
@@ -256,6 +276,7 @@ export function useTimeTrackerApp() {
       && left.taskCreateOpen === right.taskCreateOpen
       && left.editingLogId === right.editingLogId
       && left.projectLogDetailProjectId === right.projectLogDetailProjectId
+      && left.taskLogDetailTaskId === right.taskLogDetailTaskId
       && left.editPickerMode === right.editPickerMode
       && left.detailGroup?.day === right.detailGroup?.day
       && left.detailGroup?.projectId === right.detailGroup?.projectId
@@ -310,6 +331,7 @@ export function useTimeTrackerApp() {
       && !snapshot.editingLogId
       && !snapshot.detailGroup
       && !snapshot.projectLogDetailProjectId
+      && !snapshot.taskLogDetailTaskId
       && !snapshot.editPickerMode;
   }
 
@@ -361,6 +383,7 @@ export function useTimeTrackerApp() {
     editingLogId.value = normalized.editingLogId;
     detailGroup.value = cloneDetailGroup(normalized.detailGroup);
     projectLogDetailProjectId.value = normalized.projectLogDetailProjectId;
+    taskLogDetailTaskId.value = normalized.taskLogDetailTaskId;
     editPickerMode.value = normalized.editPickerMode;
 
     if (editingLogId.value) {
@@ -390,6 +413,16 @@ export function useTimeTrackerApp() {
       totalProjectLogCount.value = 0;
       hasMoreProjectLogs.value = true;
       loadingMoreProjectLogs.value = false;
+    }
+
+    if (!taskLogDetailTaskId.value) {
+      resetTaskLogDetailState();
+    } else {
+      taskLogDetailLogs.value = [];
+      taskLogOffset.value = 0;
+      totalTaskLogCount.value = 0;
+      hasMoreTaskLogs.value = true;
+      loadingMoreTaskLogs.value = false;
     }
 
     if (!taskCreateOpen.value) {
@@ -422,6 +455,10 @@ export function useTimeTrackerApp() {
 
     if (normalized.projectLogDetailProjectId && userId.value && restoreSequence === historyRestoreSequence && projectLogDetailProjectId.value === normalized.projectLogDetailProjectId) {
       await loadInitialProjectLogs(normalized.projectLogDetailProjectId);
+    }
+
+    if (normalized.taskLogDetailTaskId && userId.value && restoreSequence === historyRestoreSequence && taskLogDetailTaskId.value === normalized.taskLogDetailTaskId) {
+      await loadInitialTaskLogs(normalized.taskLogDetailTaskId);
     }
   }
 
@@ -528,6 +565,24 @@ export function useTimeTrackerApp() {
       projectLogOffset.value = projectLogDetailLogs.value.length;
       hasMoreProjectLogs.value = projectLogOffset.value < totalProjectLogCount.value;
     }
+
+    if (taskLogDetailTaskId.value) {
+      const previousMatchesTask = Boolean(previous && !previous.deleted_at && previous.task_id === taskLogDetailTaskId.value);
+      const nextMatchesTask = Boolean(next && !next.deleted_at && next.task_id === taskLogDetailTaskId.value);
+      if (!previousMatchesTask && nextMatchesTask) {
+        totalTaskLogCount.value += 1;
+      } else if (previousMatchesTask && !nextMatchesTask) {
+        totalTaskLogCount.value = Math.max(0, totalTaskLogCount.value - 1);
+      }
+
+      const nextTaskLogs = taskLogDetailLogs.value.filter((log) => log.id !== previous?.id && log.id !== next?.id);
+      if (next && nextMatchesTask) {
+        nextTaskLogs.push(next);
+      }
+      taskLogDetailLogs.value = sortLogsDesc(nextTaskLogs);
+      taskLogOffset.value = taskLogDetailLogs.value.length;
+      hasMoreTaskLogs.value = taskLogOffset.value < totalTaskLogCount.value;
+    }
   }
 
   async function loadInitialLogs() {
@@ -598,6 +653,41 @@ export function useTimeTrackerApp() {
       hasMoreProjectLogs.value = projectLogOffset.value < totalProjectLogCount.value;
     } finally {
       loadingMoreProjectLogs.value = false;
+    }
+  }
+
+  async function loadInitialTaskLogs(taskId: string) {
+    if (!userId.value) return;
+
+    taskLogOffset.value = 0;
+    hasMoreTaskLogs.value = true;
+    loadingMoreTaskLogs.value = false;
+    totalTaskLogCount.value = await countTaskTimeLogs(userId.value, taskId);
+
+    const page = await listTaskTimeLogsPage(userId.value, taskId, 0, MOBILE_TIMELINE_PAGE_SIZE);
+    taskLogDetailLogs.value = page;
+    taskLogOffset.value = page.length;
+    hasMoreTaskLogs.value = taskLogOffset.value < totalTaskLogCount.value;
+  }
+
+  async function loadMoreTaskLogs() {
+    if (!userId.value || !taskLogDetailTaskId.value || loadingMoreTaskLogs.value || !hasMoreTaskLogs.value) return;
+
+    loadingMoreTaskLogs.value = true;
+    try {
+      const page = await listTaskTimeLogsPage(userId.value, taskLogDetailTaskId.value, taskLogOffset.value, MOBILE_TIMELINE_PAGE_SIZE);
+      if (!page.length) {
+        hasMoreTaskLogs.value = false;
+        return;
+      }
+
+      const nextLogs = taskLogDetailLogs.value.slice();
+      nextLogs.push(...page);
+      taskLogDetailLogs.value = sortLogsDesc(nextLogs);
+      taskLogOffset.value += page.length;
+      hasMoreTaskLogs.value = taskLogOffset.value < totalTaskLogCount.value;
+    } finally {
+      loadingMoreTaskLogs.value = false;
     }
   }
 
@@ -697,6 +787,8 @@ export function useTimeTrackerApp() {
     detailLogs.value = [];
     projectLogDetailProjectId.value = null;
     projectLogDetailLogs.value = [];
+    taskLogDetailTaskId.value = null;
+    taskLogDetailLogs.value = [];
     runningLog.value = undefined;
     selectedProjectId.value = '';
     selectedTaskId.value = null;
@@ -711,6 +803,10 @@ export function useTimeTrackerApp() {
     totalProjectLogCount.value = 0;
     hasMoreProjectLogs.value = true;
     loadingMoreProjectLogs.value = false;
+    taskLogOffset.value = 0;
+    totalTaskLogCount.value = 0;
+    hasMoreTaskLogs.value = true;
+    loadingMoreTaskLogs.value = false;
     syncState.pendingCount = 0;
     resetSheets();
     writeHistorySnapshot('replace');
@@ -948,6 +1044,7 @@ export function useTimeTrackerApp() {
   async function openLogDetail(day: string, projectId: string, taskId: string | null, historyMode: HistorySyncMode = 'push') {
     closeLogEditor('none');
     closeProjectLogDetail('none');
+    closeTaskLogDetail('none');
     reportsOpen.value = false;
     settingsOpen.value = false;
     calendarOpen.value = false;
@@ -977,6 +1074,7 @@ export function useTimeTrackerApp() {
   async function openProjectLogDetail(projectId: string, historyMode: HistorySyncMode = 'push') {
     closeLogEditor('none');
     closeLogDetail('none');
+    closeTaskLogDetail('none');
     reportsOpen.value = false;
     settingsOpen.value = false;
     calendarOpen.value = false;
@@ -1001,11 +1099,40 @@ export function useTimeTrackerApp() {
     navigateBackOr(applyClose);
   }
 
+  async function openTaskLogDetail(taskId: string, historyMode: HistorySyncMode = 'push') {
+    closeLogEditor('none');
+    closeLogDetail('none');
+    closeProjectLogDetail('none');
+    reportsOpen.value = false;
+    settingsOpen.value = false;
+    calendarOpen.value = false;
+    resetSheets();
+    taskLogDetailTaskId.value = taskId;
+    taskLogDetailLogs.value = [];
+    await loadInitialTaskLogs(taskId);
+    writeHistorySnapshot(historyMode);
+  }
+
+  function closeTaskLogDetail(historyMode: Exclude<HistorySyncMode, 'push'> = 'replace') {
+    const applyClose = () => {
+      resetTaskLogDetailState();
+      writeHistorySnapshot(historyMode);
+    };
+
+    if (historyMode === 'none') {
+      applyClose();
+      return;
+    }
+
+    navigateBackOr(applyClose);
+  }
+
   function openReports(historyMode: HistorySyncMode = 'push') {
     previousMobileScreen.value = detailGroup.value ? 'detail' : 'main';
     closeLogEditor('none');
     closeLogDetail('none');
     closeProjectLogDetail('none');
+    closeTaskLogDetail('none');
     resetSheets();
     settingsOpen.value = false;
     calendarOpen.value = false;
@@ -1032,6 +1159,7 @@ export function useTimeTrackerApp() {
     closeLogEditor('none');
     closeLogDetail('none');
     closeProjectLogDetail('none');
+    closeTaskLogDetail('none');
     resetSheets();
     reportsOpen.value = false;
     calendarOpen.value = false;
@@ -1058,6 +1186,7 @@ export function useTimeTrackerApp() {
     closeLogEditor('none');
     closeLogDetail('none');
     closeProjectLogDetail('none');
+    closeTaskLogDetail('none');
     resetSheets();
     reportsOpen.value = false;
     settingsOpen.value = false;
@@ -1120,6 +1249,7 @@ export function useTimeTrackerApp() {
     closeLogEditor('none');
     closeLogDetail('none');
     closeProjectLogDetail('none');
+    closeTaskLogDetail('none');
     resetSheets();
     reportsOpen.value = false;
     settingsOpen.value = false;
@@ -1249,6 +1379,7 @@ export function useTimeTrackerApp() {
     editingLogId,
     detailGroup,
     projectLogDetailProjectId,
+    taskLogDetailTaskId,
     reportsOpen,
     settingsOpen,
     calendarOpen,
@@ -1266,6 +1397,8 @@ export function useTimeTrackerApp() {
     selectedProject,
     taskSheetProject,
     projectLogDetailProject,
+    taskLogDetailTask,
+    taskLogDetailProject,
     taskSheetTasks,
     activeTasks,
     logFormTasks,
@@ -1275,10 +1408,13 @@ export function useTimeTrackerApp() {
     groupedLogs,
     detailLogs,
     projectLogDetailLogs,
+    taskLogDetailLogs,
     hasMoreLogs,
     loadingMoreLogs,
     hasMoreProjectLogs,
     loadingMoreProjectLogs,
+    hasMoreTaskLogs,
+    loadingMoreTaskLogs,
     timelineScrollTop,
     ticker,
     signIn,
@@ -1287,6 +1423,7 @@ export function useTimeTrackerApp() {
     refreshLocalData,
     loadMoreLogs,
     loadMoreProjectLogs,
+    loadMoreTaskLogs,
     setTimelineScrollTop,
     addProject,
     addMobileProject,
@@ -1309,6 +1446,8 @@ export function useTimeTrackerApp() {
     closeLogDetail,
     openProjectLogDetail,
     closeProjectLogDetail,
+    openTaskLogDetail,
+    closeTaskLogDetail,
     openReports,
     closeReports,
     openSettings,
