@@ -1,0 +1,25 @@
+# Xcode build output
+build/
+DerivedData/
+*.xcarchive
+*.dSYM
+*.dSYM.zip
+*.app
+*.pkg
+
+# Per-user Xcode state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+
+# Swift Package Manager build state
+.build/
+.swiftpm/
+
+# Generated local configuration
+SupabaseConfig.plist
+
+# macOS metadata
+.DS_Store
