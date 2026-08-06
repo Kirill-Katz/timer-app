@@ -6,10 +6,21 @@ struct ContentView: View {
     var body: some View {
         Group {
             switch auth.state {
+            case .checking:
+                ProgressView("Checking session…")
             case .signedOut:
                 LoginView(auth: auth)
             case .signedIn(let email):
-                SuccessView(email: email, signOut: auth.signOut)
+                SuccessView(
+                    email: email,
+                    isRefreshing: auth.isRefreshing,
+                    sessionMessage: auth.sessionMessage,
+                    errorMessage: auth.errorMessage,
+                    refresh: {
+                        Task { await auth.refreshSessionAndWidget() }
+                    },
+                    signOut: auth.signOut
+                )
             }
         }
         .frame(minWidth: 420, minHeight: 420)
@@ -98,6 +109,10 @@ private struct LoginView: View {
 
 private struct SuccessView: View {
     let email: String
+    let isRefreshing: Bool
+    let sessionMessage: String?
+    let errorMessage: String?
+    let refresh: () -> Void
     let signOut: () -> Void
 
     var body: some View {
@@ -107,15 +122,35 @@ private struct SuccessView: View {
                 .foregroundStyle(.green)
 
             VStack(spacing: 6) {
-                Text("Success")
+                Text("Signed In")
                     .font(.largeTitle.bold())
                 Text("Signed in as \(email)")
                     .foregroundStyle(.secondary)
             }
 
-            Text("Your session is ready for the Timer widget.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
+            if let sessionMessage {
+                Text(sessionMessage)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(errorMessage == nil ? Color.secondary : Color.orange)
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button(action: refresh) {
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Text("Refresh Session & Widget")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isRefreshing)
 
             Button("Sign Out", action: signOut)
                 .buttonStyle(.bordered)

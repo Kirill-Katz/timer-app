@@ -22,6 +22,10 @@ enum SessionStore {
     }
 
     static func load() throws -> SupabaseSession? {
+        try loadStored()?.session
+    }
+
+    static func loadStored() throws -> StoredSupabaseSession? {
         var query = baseQuery
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -37,13 +41,13 @@ enum SessionStore {
 
         let decoder = JSONDecoder()
         if let storedSession = try? decoder.decode(StoredSupabaseSession.self, from: data) {
-            return storedSession.session
+            return storedSession
         }
 
         // Migrate sessions saved by the first app version to the shared format.
         let legacySession = try decoder.decode(SupabaseSession.self, from: data)
         try save(legacySession)
-        return legacySession
+        return try loadStored()
     }
 
     static func clear() throws {
@@ -55,8 +59,7 @@ enum SessionStore {
 
     private static func upsert(_ data: Data) throws {
         let attributes: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+            kSecValueData as String: data
         ]
         let updateStatus = SecItemUpdate(
             baseQuery as CFDictionary,
@@ -72,6 +75,7 @@ enum SessionStore {
 
         var addQuery = baseQuery
         attributes.forEach { addQuery[$0.key] = $0.value }
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
 
         // Another process may have inserted the item between update and add.
@@ -102,11 +106,17 @@ enum SessionStore {
     }
 }
 
-private struct StoredSupabaseSession: Codable {
+struct StoredSupabaseSession: Codable {
     let session: SupabaseSession
     let projectURL: String
     let publishableKey: String
     let savedAt: Date
+
+    var isExpired: Bool {
+        let refreshMargin = min(60, max(0, session.expiresIn / 10))
+        let usableLifetime = max(0, session.expiresIn - refreshMargin)
+        return Date() >= savedAt.addingTimeInterval(TimeInterval(usableLifetime))
+    }
 }
 
 private enum SessionStoreError: LocalizedError {

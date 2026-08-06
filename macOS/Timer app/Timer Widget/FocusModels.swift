@@ -25,6 +25,8 @@ struct ProjectFocus: Codable, Identifiable {
 
 enum FocusDataError: LocalizedError {
     case signedOut
+    case sessionUnavailable
+    case sessionCorrupted
     case invalidConfiguration
     case invalidResponse
     case requestFailed(Int)
@@ -37,7 +39,11 @@ enum FocusDataError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .signedOut:
-            "Open Timer and sign in."
+            "Open Timer and sign in again."
+        case .sessionUnavailable:
+            "The saved session is temporarily unavailable."
+        case .sessionCorrupted:
+            "Open Timer to repair the saved session."
         case .invalidConfiguration:
             "Supabase configuration is unavailable."
         case .invalidResponse:

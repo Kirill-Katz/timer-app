@@ -1,3 +1,4 @@
+import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -75,6 +76,7 @@ struct TimerWidgetEntryView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .widgetURL(URL(string: "timer-app://today"))
         .containerBackground(.background, for: .widget)
     }
 
@@ -88,11 +90,17 @@ struct TimerWidgetEntryView: View {
                 Spacer()
 
                 if entry.isStale {
-                    Image(systemName: "arrow.clockwise")
+                    Image(systemName: "exclamationmark.triangle")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.orange)
                         .help(entry.message ?? "Showing the last update")
                 }
+
+                Text(summary.fetchedAt, style: .time)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
+
+                refreshButton
             }
 
             Text(formatTotal(summary.totalSeconds))
@@ -138,9 +146,15 @@ struct TimerWidgetEntryView: View {
 
     private var unavailableView: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: "timer")
-                .font(.title2)
-                .foregroundStyle(.tint)
+            HStack {
+                Image(systemName: "timer")
+                    .font(.title2)
+                    .foregroundStyle(.tint)
+
+                Spacer()
+
+                refreshButton
+            }
 
             Spacer()
 
@@ -152,6 +166,15 @@ struct TimerWidgetEntryView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
         }
+    }
+
+    private var refreshButton: some View {
+        Button(intent: RefreshFocusIntent()) {
+            Image(systemName: "arrow.clockwise")
+                .font(.caption.weight(.semibold))
+        }
+        .buttonStyle(.plain)
+        .help("Refresh focus time")
     }
 
     private var maxProjectRows: Int {

@@ -39,11 +39,14 @@ enum WidgetSessionStore {
 
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else {
+        if status == errSecItemNotFound {
             throw FocusDataError.signedOut
         }
+        guard status == errSecSuccess, let data = item as? Data else {
+            throw FocusDataError.sessionUnavailable
+        }
         guard let context = try? JSONDecoder().decode(WidgetStoredSession.self, from: data) else {
-            throw FocusDataError.signedOut
+            throw FocusDataError.sessionCorrupted
         }
         return context
     }
@@ -51,8 +54,7 @@ enum WidgetSessionStore {
     static func save(_ context: WidgetStoredSession) throws {
         let data = try JSONEncoder().encode(context)
         let attributes: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+            kSecValueData as String: data
         ]
         let updateStatus = SecItemUpdate(
             baseQuery as CFDictionary,
@@ -61,11 +63,12 @@ enum WidgetSessionStore {
 
         if updateStatus == errSecSuccess { return }
         guard updateStatus == errSecItemNotFound else {
-            throw FocusDataError.signedOut
+            throw FocusDataError.sessionUnavailable
         }
 
         var addQuery = baseQuery
         attributes.forEach { addQuery[$0.key] = $0.value }
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
 
         if addStatus == errSecDuplicateItem {
@@ -74,13 +77,13 @@ enum WidgetSessionStore {
                 attributes as CFDictionary
             )
             guard retryStatus == errSecSuccess else {
-                throw FocusDataError.signedOut
+                throw FocusDataError.sessionUnavailable
             }
             return
         }
 
         guard addStatus == errSecSuccess else {
-            throw FocusDataError.signedOut
+            throw FocusDataError.sessionUnavailable
         }
     }
 
@@ -140,6 +143,12 @@ actor WidgetAuthManager {
         }
         guard (200..<300).contains(response.statusCode) else {
             if response.statusCode == 400 || response.statusCode == 401 {
+                // The host app may have refreshed and replaced this token while this
+                // request was in flight. Use that newer session instead of signing out.
+                let latest = try WidgetSessionStore.load()
+                if latest.session.accessToken != context.session.accessToken {
+                    return latest
+                }
                 throw FocusDataError.signedOut
             }
             throw FocusDataError.requestFailed(response.statusCode)
@@ -157,6 +166,13 @@ actor WidgetAuthManager {
             publishableKey: context.publishableKey,
             savedAt: Date()
         )
+
+        // Do not overwrite a token the host app rotated while this request ran.
+        let latest = try WidgetSessionStore.load()
+        if latest.session.accessToken != context.session.accessToken {
+            return latest
+        }
+
         try WidgetSessionStore.save(refreshed)
         return refreshed
     }
@@ -164,4 +180,8 @@ actor WidgetAuthManager {
 
 private struct RefreshRequest: Encodable {
     let refreshToken: String
+
+    private enum CodingKeys: String, CodingKey {
+        case refreshToken = "refresh_token"
+    }
 }

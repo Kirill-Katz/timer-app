@@ -1,18 +1,17 @@
-//
-//  AppIntent.swift
-//  Timer Widget
-//
-//  Created by Chiril Cat on 02.08.2026.
-//
-
-import WidgetKit
 import AppIntents
+import WidgetKit
 
-struct ConfigurationAppIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource { "Configuration" }
-    static var description: IntentDescription { "This is an example widget." }
+struct RefreshFocusIntent: AppIntent {
+    static var title: LocalizedStringResource { "Refresh Focus" }
+    static var description: IntentDescription {
+        "Fetch today's focus time and update the Timer widget."
+    }
 
-    // An example configurable parameter.
-    @Parameter(title: "Favorite Emoji", default: "😃")
-    var favoriteEmoji: String
+    func perform() async throws -> some IntentResult {
+        if let summary = try? await FocusDataService().fetchToday() {
+            FocusSummaryCache.save(summary)
+        }
+        WidgetCenter.shared.reloadTimelines(ofKind: "Timer_Widget")
+        return .result()
+    }
 }
