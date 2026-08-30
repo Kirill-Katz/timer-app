@@ -14,3 +14,7 @@ Time Tracker app I made for myself, but you can use it too, because open source.
 # Calendar
 
 <img src="https://github.com/user-attachments/assets/7b23b346-1ffb-4dc3-9c08-397cdfbf0417" width="300" />
+
+# MacOS Widget
+
+<img width="354" height="173" alt="image" src="https://github.com/user-attachments/assets/772175b7-f301-417b-bf48-f5f200a2a7fb" />
